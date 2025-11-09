@@ -7,6 +7,15 @@
     "disposition": "Friendly",
     "relationship": 45,
     "growth_path": "Trader",
+    "level": 1,
+    "xp": 0,
+    "stats": {
+      "str": 2,
+      "dex": 3,
+      "wis": 4,
+      "cha": 6,
+      "luck": 4
+    },
     "flags": {
       "met": false,
       "quest_given": false
@@ -20,6 +29,15 @@
     "disposition": "Neutral",
     "relationship": 50,
     "growth_path": "Guard",
+    "level": 1,
+    "xp": 0,
+    "stats": {
+      "str": 6,
+      "dex": 4,
+      "wis": 2,
+      "cha": 3,
+      "luck": 3
+    },
     "flags": {
       "met": false,
       "quest_given": false
@@ -33,6 +51,15 @@
     "disposition": "Hostile",
     "relationship": 30,
     "growth_path": "Council",
+    "level": 1,
+    "xp": 0,
+    "stats": {
+      "str": 2,
+      "dex": 2,
+      "wis": 7,
+      "cha": 5,
+      "luck": 3
+    },
     "flags": {
       "met": false,
       "quest_given": false

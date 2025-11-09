@@ -78,7 +78,14 @@ export class CLI {
       else if (relationship < 80) relationshipText = '🟢 Friendly';
       else relationshipText = '💚 Ally';
 
-      console.log(`  ${npc.name} (${npc.role}) - ${relationshipText} (${relationship})`);
+      const level = npc.level || 1;
+      const stats = npc.stats;
+      const statsStr = stats ? `STR:${stats.str} DEX:${stats.dex} WIS:${stats.wis} CHA:${stats.cha}` : '';
+      
+      console.log(`  ${npc.name} (${npc.role}) - Level ${level} - ${relationshipText} (${relationship})`);
+      if (statsStr) {
+        console.log(`    Stats: ${statsStr}`);
+      }
     });
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   }
@@ -225,7 +232,7 @@ export class CLI {
 
   handleEndDay(): void {
     console.log('\n🌙 Ending the day...\n');
-    this.game.endDay();
+    const growthMessages = this.game.endDay();
     console.log('✨ A new day begins! Your stamina has been restored.\n');
     
     const player = this.game.getPlayer();
@@ -234,8 +241,15 @@ export class CLI {
     console.log(`📅 Day ${this.game.getDay()} Summary:`);
     console.log(`  Your level: ${player.level}`);
     console.log(`  Tribe prosperity: ${tribe.attributes.prosperity}`);
-    console.log(`  Tribe morale: ${tribe.attributes.morale}\n`);
+    console.log(`  Tribe morale: ${tribe.attributes.morale}`);
     
+    // Display NPC growth messages
+    if (growthMessages && growthMessages.length > 0) {
+      console.log(`\n👥 NPC Growth:`);
+      growthMessages.forEach(msg => console.log(`  ${msg}`));
+    }
+    
+    console.log('');
     readlineSync.question('Press Enter to continue...');
   }
 

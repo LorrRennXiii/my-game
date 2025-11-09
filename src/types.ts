@@ -59,6 +59,14 @@ export interface Tribe {
   resources: TribeResources;
 }
 
+export interface NPCStats {
+  str: number;
+  dex: number;
+  wis: number;
+  cha: number;
+  luck: number;
+}
+
 export interface NPC {
   id: string;
   name: string;
@@ -67,6 +75,9 @@ export interface NPC {
   disposition: "Friendly" | "Neutral" | "Hostile";
   relationship: number;
   growth_path: string;
+  level: number;
+  xp: number;
+  stats: NPCStats;
   flags: Record<string, boolean>;
 }
 

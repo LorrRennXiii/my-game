@@ -103,12 +103,19 @@ export class GameLoop {
     return result
   }
 
-  endDay(): void {
+  endDay(): string[] {
     this.day += 1
     this.eventManager.resetDailyEvents()
 
     const player = this.playerManager.getPlayer()
     const tribe = this.tribeManager.getTribe()
+
+    // Process NPC growth
+    const relationshipBonus: Record<string, number> = {}
+    Object.entries(player.relationships).forEach(([npcId, rel]) => {
+      relationshipBonus[npcId] = rel
+    })
+    const growthMessages = this.npcManager.processNPCGrowth(this.day, relationshipBonus)
 
     if (this.onDayEnd) {
       this.onDayEnd(this.day - 1, player, tribe)
@@ -116,6 +123,9 @@ export class GameLoop {
 
     // Start the new day (restores stamina)
     this.startDay()
+
+    // Return growth messages for display
+    return growthMessages
   }
 
   getPlayer(): Player {
@@ -188,6 +198,25 @@ export class GameLoop {
 
   async listSaves(): Promise<string[]> {
     return await this.saveManager.listSaves()
+  }
+
+  /**
+   * Manually trigger NPC growth (for events or special interactions)
+   */
+  triggerNPCGrowth(npcId: string, xpAmount: number): boolean {
+    return this.npcManager.addXP(npcId, xpAmount)
+  }
+
+  /**
+   * Get NPC details including stats and level
+   */
+  getNPCDetails(npcId: string): { level: number; stats: any } | undefined {
+    const npc = this.npcManager.getNPC(npcId)
+    if (!npc) return undefined
+    return {
+      level: npc.level || 1,
+      stats: npc.stats
+    }
   }
 }
 
