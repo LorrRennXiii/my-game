@@ -1,0 +1,62 @@
+[
+  {
+    "id": "event_storm_01",
+    "type": "daily",
+    "condition": "tribe.food > 100",
+    "text": "A storm floods the fields. The tribe loses crops.",
+    "effects": {
+      "food": -10,
+      "morale": -5
+    }
+  },
+  {
+    "id": "event_harvest_01",
+    "type": "daily",
+    "condition": "",
+    "text": "A bountiful harvest brings joy to the tribe.",
+    "effects": {
+      "food": 15,
+      "morale": 5
+    }
+  },
+  {
+    "id": "event_beast_01",
+    "type": "action",
+    "condition": "hunt",
+    "text": "A wild beast crosses your path during the hunt!",
+    "effects": {
+      "food": 10,
+      "materials": 5
+    }
+  },
+  {
+    "id": "event_trader_01",
+    "type": "action",
+    "condition": "trade",
+    "text": "A wealthy merchant offers you a special deal.",
+    "effects": {
+      "wealth": 25
+    }
+  },
+  {
+    "id": "event_npc_favor_01",
+    "type": "npc",
+    "condition": "npc_01",
+    "text": "Rena offers you a favor in return for your friendship.",
+    "effects": {
+      "wealth": 20,
+      "morale": 3
+    }
+  },
+  {
+    "id": "event_council_01",
+    "type": "tribe_milestone",
+    "condition": "tribe.prosperity >= 50",
+    "text": "The tribe council forms to discuss the future. Your influence grows.",
+    "effects": {
+      "knowledge": 10,
+      "morale": 10
+    }
+  }
+]
+

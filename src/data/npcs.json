@@ -1,0 +1,42 @@
+[
+  {
+    "id": "npc_01",
+    "name": "Rena",
+    "tribe": "Stonefang",
+    "role": "Merchant",
+    "disposition": "Friendly",
+    "relationship": 45,
+    "growth_path": "Trader",
+    "flags": {
+      "met": false,
+      "quest_given": false
+    }
+  },
+  {
+    "id": "npc_02",
+    "name": "Gorak",
+    "tribe": "Stonefang",
+    "role": "Warrior",
+    "disposition": "Neutral",
+    "relationship": 50,
+    "growth_path": "Guard",
+    "flags": {
+      "met": false,
+      "quest_given": false
+    }
+  },
+  {
+    "id": "npc_03",
+    "name": "Thorn",
+    "tribe": "Stonefang",
+    "role": "Elder",
+    "disposition": "Hostile",
+    "relationship": 30,
+    "growth_path": "Council",
+    "flags": {
+      "met": false,
+      "quest_given": false
+    }
+  }
+]
+

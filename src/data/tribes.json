@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Stonefang",
+    "description": "Earth-bound warriors and builders, prideful and resilient.",
+    "strengths": ["Defense", "Strength", "Resource production"],
+    "weaknesses": ["Weak magic", "Diplomacy"],
+    "theme": "Honor, endurance, tradition"
+  },
+  {
+    "name": "Windveil",
+    "description": "Agile hunters and spirit-guides attuned to nature.",
+    "strengths": ["Speed", "Exploration", "Awareness", "Diplomacy"],
+    "weaknesses": ["Fragile economy", "Low defense"],
+    "theme": "Freedom, curiosity, intuition"
+  },
+  {
+    "name": "Emberroot",
+    "description": "Scholars and mystics who commune with ancient energies.",
+    "strengths": ["Knowledge", "Crafting", "Magic"],
+    "weaknesses": ["Physically weak", "Slow to expand"],
+    "theme": "Wisdom, secrecy, creation"
+  }
+]
+
