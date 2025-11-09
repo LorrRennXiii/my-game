@@ -213,7 +213,12 @@ export class CLI {
       const filepath = await this.game.saveGame();
       console.log(`\n✅ Game saved to: ${filepath}\n`);
     } catch (error) {
-      console.log(`\n❌ Error saving game: ${error}\n`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : '';
+      console.log(`\n❌ Error saving game: ${errorMessage}\n`);
+      if (errorStack) {
+        console.log(`Stack trace: ${errorStack}\n`);
+      }
     }
     readlineSync.question('Press Enter to continue...');
   }
