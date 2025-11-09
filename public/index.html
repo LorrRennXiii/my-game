@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three Tribes Chronicle</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <div class="container">
+                <h1 class="title">🌍 Three Tribes Chronicle</h1>
+                <p class="subtitle">A text-driven RPG with tribal simulation</p>
+                
+                <div class="start-form">
+                    <input type="text" id="player-name" placeholder="Enter your name" value="Aro">
+                    <select id="tribe-select">
+                        <option value="Stonefang">Stonefang - Earth-bound warriors</option>
+                        <option value="Windveil">Windveil - Agile hunters</option>
+                        <option value="Emberroot">Emberroot - Scholars and mystics</option>
+                    </select>
+                    <button id="start-new-game" class="btn btn-primary">Start New Game</button>
+                    <button id="load-game-btn" class="btn btn-secondary">Load Game</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Load Game Screen -->
+        <div id="load-screen" class="screen">
+            <div class="container">
+                <h2>Load Game</h2>
+                <div id="saves-list"></div>
+                <button id="back-to-start" class="btn btn-secondary">Back</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-container">
+                <!-- Header -->
+                <header class="game-header">
+                    <h1>Three Tribes Chronicle</h1>
+                    <div class="header-info">
+                        <span>Day <span id="current-day">1</span></span>
+                        <span id="stamina-display">⚡ <span id="stamina">5</span>/<span id="max-stamina">5</span></span>
+                    </div>
+                </header>
+
+                <div class="game-layout">
+                    <!-- Left Panel - Character & Tribe -->
+                    <aside class="left-panel">
+                        <!-- Player Status -->
+                        <section class="card">
+                            <h2>📊 Character</h2>
+                            <div id="player-status"></div>
+                        </section>
+
+                        <!-- Tribe Status -->
+                        <section class="card">
+                            <h2>🏛️ <span id="tribe-name">Stonefang</span> Tribe</h2>
+                            <div id="tribe-status"></div>
+                        </section>
+
+                        <!-- NPCs -->
+                        <section class="card">
+                            <h2>👥 Tribal Members</h2>
+                            <div id="npcs-list"></div>
+                        </section>
+                    </aside>
+
+                    <!-- Main Content -->
+                    <main class="main-content">
+                        <!-- Actions -->
+                        <section class="card actions-card">
+                            <h2>📋 Actions</h2>
+                            <div class="actions-grid">
+                                <button class="action-btn" data-action="farm">
+                                    <span class="icon">🌾</span>
+                                    <span class="label">Farm</span>
+                                    <span class="cost">1 ⚡</span>
+                                </button>
+                                <button class="action-btn" data-action="gather">
+                                    <span class="icon">🌿</span>
+                                    <span class="label">Gather</span>
+                                    <span class="cost">1 ⚡</span>
+                                </button>
+                                <button class="action-btn" data-action="trade">
+                                    <span class="icon">💰</span>
+                                    <span class="label">Trade</span>
+                                    <span class="cost">1 ⚡</span>
+                                </button>
+                                <button class="action-btn" data-action="visit">
+                                    <span class="icon">👥</span>
+                                    <span class="label">Visit NPC</span>
+                                    <span class="cost">1 ⚡</span>
+                                </button>
+                            </div>
+                            <div class="action-buttons">
+                                <button id="end-day-btn" class="btn btn-primary">🌙 End Day</button>
+                                <button id="save-game-btn" class="btn btn-secondary">💾 Save Game</button>
+                            </div>
+                        </section>
+
+                        <!-- Messages/Events -->
+                        <section class="card messages-card">
+                            <h2>📜 Events & Messages</h2>
+                            <div id="messages" class="messages"></div>
+                        </section>
+                    </main>
+                </div>
+            </div>
+        </div>
+
+        <!-- NPC Selection Modal -->
+        <div id="npc-modal" class="modal">
+            <div class="modal-content">
+                <h2>Choose an NPC to Visit</h2>
+                <div id="npc-selection"></div>
+                <button class="btn btn-secondary" id="close-npc-modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
