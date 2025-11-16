@@ -39,30 +39,6 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
             <div class="game-container">
-                <!-- Compact Status Bar (replaces header) -->
-                <div class="status-bar">
-                    <div class="status-group">
-                        <span class="status-label">Day</span>
-                        <span class="status-value" id="current-day">1</span>
-                    </div>
-                    <div class="status-group">
-                        <span class="status-icon">⚡</span>
-                        <span class="status-value" id="stamina">5</span>
-                        <span class="status-separator">/</span>
-                        <span class="status-value" id="max-stamina">5</span>
-                    </div>
-                    <div class="status-group">
-                        <span class="status-icon">❤️</span>
-                        <span class="status-value" id="health">100</span>
-                        <span class="status-separator">/</span>
-                        <span class="status-value" id="max-health">100</span>
-                    </div>
-                    <div class="status-group status-actions">
-                        <a href="npc-manager.html" class="status-link" title="Manage NPCs">👥</a>
-                        <a href="game-master.html" class="status-link" title="Game Master">🎮</a>
-                    </div>
-                </div>
-
                 <div class="game-layout">
                     <!-- Left Panel - Character & Tribe -->
                     <aside class="left-panel">
@@ -93,54 +69,84 @@
 
                     <!-- Main Content -->
                     <main class="main-content">
-                        <!-- World Map -->
-                        <section class="card map-card">
-                            <h2>🗺️ World Map</h2>
-                            <div class="map-wrapper">
-                                <div class="map-canvas" id="map-canvas">
-                                    <!-- Map terrain and NPCs will be rendered here -->
+                        <!-- Top Row: Map and Actions -->
+                        <div class="top-row">
+                            <!-- World Map -->
+                            <section class="card map-card">
+                                <h2>🗺️ Map</h2>
+                                <div class="map-wrapper">
+                                    <div class="map-canvas" id="map-canvas">
+                                        <!-- Map terrain and NPCs will be rendered here -->
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="map-controls">
-                                <button class="btn btn-secondary" id="refresh-map-btn">🔄 Refresh Map</button>
-                            </div>
-                        </section>
+                            </section>
 
-                        <!-- Actions -->
-                        <section class="card actions-card">
-                            <h2>📋 Actions</h2>
-                            <div class="actions-grid">
-                                <button class="action-btn" data-action="farm">
-                                    <span class="icon">🌾</span>
-                                    <span class="label">Farm</span>
-                                    <span class="cost">1 ⚡</span>
-                                </button>
-                                <button class="action-btn" data-action="gather">
-                                    <span class="icon">🌿</span>
-                                    <span class="label">Gather</span>
-                                    <span class="cost">1 ⚡</span>
-                                </button>
-                                <button class="action-btn" data-action="trade">
-                                    <span class="icon">💰</span>
-                                    <span class="label">Trade</span>
-                                    <span class="cost">1 ⚡</span>
-                                </button>
-                                <button class="action-btn" data-action="hunt">
-                                    <span class="icon">🏹</span>
-                                    <span class="label">Hunt</span>
-                                    <span class="cost">2 ⚡</span>
-                                </button>
-                                <button class="action-btn" data-action="explore">
-                                    <span class="icon">🗺️</span>
-                                    <span class="label">Explore</span>
-                                    <span class="cost">2 ⚡</span>
-                                </button>
-                            </div>
-                            <div class="action-buttons">
-                                <button id="end-day-btn" class="btn btn-primary">🌙 End Day</button>
-                                <button id="save-game-btn" class="btn btn-secondary">💾 Save Game</button>
-                            </div>
-                        </section>
+                            <!-- Actions -->
+                            <section class="card actions-card">
+                                <!-- Floating Status Bar -->
+                                <div class="status-bar-floating">
+                                    <div class="status-group">
+                                        <span class="status-label">Day</span>
+                                        <span class="status-value" id="current-day">1</span>
+                                    </div>
+                                    <div class="status-group">
+                                        <span class="status-icon">⚡</span>
+                                        <span class="status-value" id="stamina">5</span>
+                                        <span class="status-separator">/</span>
+                                        <span class="status-value" id="max-stamina">5</span>
+                                    </div>
+                                    <div class="status-group">
+                                        <span class="status-icon">❤️</span>
+                                        <span class="status-value" id="health">100</span>
+                                        <span class="status-separator">/</span>
+                                        <span class="status-value" id="max-health">100</span>
+                                    </div>
+                                    <div class="status-group status-actions">
+                                        <a href="npc-manager.html" class="status-link" title="Manage NPCs">👥</a>
+                                        <a href="game-master.html" class="status-link" title="Game Master">🎮</a>
+                                    </div>
+                                </div>
+                                
+                                <!-- Enemy Encounter Window (Top) -->
+                                <div class="encounter-window" id="encounter-window">
+                                    <div class="encounter-placeholder">
+                                        <span class="encounter-icon">⚔️</span>
+                                        <span class="encounter-text">No encounter</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Action Buttons (Bottom) -->
+                                <div class="actions-section">
+                                    <h2>📋 Actions</h2>
+                                    <div class="actions-grid-compact">
+                                        <button class="action-btn-compact" data-action="farm" title="Farm - Cost: 1 Stamina">
+                                            <span class="icon">🌾</span>
+                                            <span class="label">Farm</span>
+                                        </button>
+                                        <button class="action-btn-compact" data-action="gather" title="Gather - Cost: 1 Stamina">
+                                            <span class="icon">🌿</span>
+                                            <span class="label">Gather</span>
+                                        </button>
+                                        <button class="action-btn-compact" data-action="trade" title="Trade - Cost: 1 Stamina">
+                                            <span class="icon">💰</span>
+                                            <span class="label">Trade</span>
+                                        </button>
+                                        <button class="action-btn-compact" data-action="hunt" title="Hunt - Cost: 2 Stamina">
+                                            <span class="icon">🏹</span>
+                                            <span class="label">Hunt</span>
+                                        </button>
+                                        <button class="action-btn-compact" data-action="explore" title="Explore - Cost: 2 Stamina">
+                                            <span class="icon">🗺️</span>
+                                            <span class="label">Explore</span>
+                                        </button>
+                                    </div>
+                                    <div class="action-buttons-compact">
+                                        <button id="end-day-btn" class="btn btn-primary btn-compact">🌙 End Day</button>
+                                        <button id="save-game-btn" class="btn btn-secondary btn-compact">💾 Save</button>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
 
                         <!-- Messages/Events -->
                         <section class="card messages-card">
