@@ -105,12 +105,13 @@ export class NPCManager {
   /**
    * Add XP to an NPC and level them up if needed
    */
-  addXP(npcId: string, amount: number): boolean {
+  addXP(npcId: string, amount: number, xpMultiplier: number = 1.0, levelUpMultiplier: number = 1.0): boolean {
     const npc = this.npcs.get(npcId)
     if (!npc) return false
 
-    npc.xp += amount
-    const levelUpThreshold = npc.level * 15 // NPCs need more XP per level
+    const adjustedAmount = Math.floor(amount * xpMultiplier)
+    npc.xp += adjustedAmount
+    const levelUpThreshold = Math.floor(npc.level * 15 * levelUpMultiplier) // NPCs need more XP per level
 
     if (npc.xp >= levelUpThreshold) {
       this.levelUpNPC(npcId)
@@ -150,15 +151,19 @@ export class NPCManager {
       preferredStats = ['str', 'dex', 'wis', 'cha', 'luck']
     }
 
-    // Distribute stat points (70% chance for preferred stats, 30% for random)
+    // Distribute stat points with RNG (70% chance for preferred stats, 30% for random)
+    // Each stat point has 90% chance to be +1, 10% chance to be +2
     for (let i = 0; i < statPoints; i++) {
+      const statRoll = Math.random()
+      const statIncrease = statRoll < 0.9 ? 1 : 2
+
       if (Math.random() < 0.7 && preferredStats.length > 0) {
         const stat = preferredStats[Math.floor(Math.random() * preferredStats.length)]
-        npc.stats[stat] += 1
+        npc.stats[stat] += statIncrease
       } else {
         const allStats: (keyof NPCStats)[] = ['str', 'dex', 'wis', 'cha', 'luck']
         const stat = allStats[Math.floor(Math.random() * allStats.length)]
-        npc.stats[stat] += 1
+        npc.stats[stat] += statIncrease
       }
     }
   }
@@ -167,7 +172,13 @@ export class NPCManager {
    * Trigger NPC growth based on time/events
    * Can be called daily or on specific events
    */
-  processNPCGrowth(day: number, relationshipBonus: Record<string, number> = {}): string[] {
+  processNPCGrowth(
+    day: number,
+    relationshipBonus: Record<string, number> = {},
+    xpMultiplier: number = 1.0,
+    levelUpMultiplier: number = 1.0,
+    growthRate: number = 50
+  ): string[] {
     const growthMessages: string[] = []
 
     this.npcs.forEach((npc, npcId) => {
@@ -178,9 +189,11 @@ export class NPCManager {
 
       let xpGain = 0
 
-      // Time-based growth (every 5 days)
-      if (day % 5 === 0) {
-        xpGain += 2
+      // Time-based growth (every day, smaller scale)
+      // NPCs get small XP gains daily (much smaller than player)
+      // Every day, NPCs have a chance to gain 1 XP (30% chance)
+      if (Math.random() < 0.3) {
+        xpGain += 1 // Small daily growth chance
       }
 
       // Relationship-based growth
@@ -203,8 +216,11 @@ export class NPCManager {
         xpGain += Math.floor(relationshipBonus[npcId] / 10)
       }
 
-      if (xpGain > 0) {
-        const leveledUp = this.addXP(npcId, xpGain)
+      // Apply growth rate modifier
+      const adjustedXpGain = Math.floor(xpGain * (growthRate / 50))
+
+      if (adjustedXpGain > 0) {
+        const leveledUp = this.addXP(npcId, adjustedXpGain, xpMultiplier, levelUpMultiplier)
         if (leveledUp) {
           growthMessages.push(`${npc.name} has grown stronger! (Level ${npc.level})`)
         }

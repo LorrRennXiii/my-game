@@ -38,10 +38,43 @@ function setupEventListeners() {
     document.getElementById('end-day-btn').addEventListener('click', endDay);
     document.getElementById('save-game-btn').addEventListener('click', saveGame);
     
+    // Refresh map button removed to save space - map auto-refreshes on actions
+    
     // NPC modal
     document.getElementById('close-npc-modal').addEventListener('click', () => {
         npcModal.classList.remove('active');
     });
+    
+    // Combat window
+    const fightBtn = document.getElementById('fight-btn');
+    const fleeBtn = document.getElementById('flee-btn');
+    const combatWindow = document.getElementById('combat-window');
+    
+    if (fightBtn) {
+        fightBtn.addEventListener('click', async () => {
+            if (currentCombatAnimal) {
+                document.getElementById('combat-message').textContent = '⚔️ Engaging in combat...';
+                await executeAction('explore', undefined, 'fight');
+                setTimeout(() => {
+                    if (combatWindow) combatWindow.classList.remove('active');
+                }, 2000);
+                currentCombatAnimal = null;
+            }
+        });
+    }
+    
+    if (fleeBtn) {
+        fleeBtn.addEventListener('click', async () => {
+            if (currentCombatAnimal) {
+                document.getElementById('combat-message').textContent = '🏃 Attempting to flee...';
+                await executeAction('explore', undefined, 'flee');
+                setTimeout(() => {
+                    if (combatWindow) combatWindow.classList.remove('active');
+                }, 2000);
+                currentCombatAnimal = null;
+            }
+        });
+    }
 }
 
 function checkForSavedSession() {
@@ -56,11 +89,15 @@ async function startNewGame() {
     const name = document.getElementById('player-name').value.trim() || 'Aro';
     const tribe = document.getElementById('tribe-select').value;
     
+    // Load permanent config and NPCs
+    const permanentConfig = getPermanentConfig();
+    const permanentNPCs = getPermanentNPCs();
+    
     try {
         const response = await fetch(`${API_BASE}/api/game/new`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, tribe })
+            body: JSON.stringify({ name, tribe, permanentConfig, permanentNPCs })
         });
         
         if (!response.ok) throw new Error('Failed to create game');
@@ -72,6 +109,13 @@ async function startNewGame() {
         
         showGameScreen();
         updateUI();
+        addMessage('✅ New game started!', 'success');
+        
+        // Update health in status bar
+        if (data.health !== undefined) {
+            document.getElementById('health').textContent = data.health;
+            document.getElementById('max-health').textContent = data.maxHealth || 100;
+        }
     } catch (error) {
         addMessage('Error starting game: ' + error.message, 'error');
     }
@@ -99,7 +143,7 @@ async function loadGameState() {
     }
 }
 
-async function executeAction(action, npcId = null) {
+async function executeAction(action, npcId = null, combatDecision = null) {
     if (!sessionId) return;
     
     const actionBtn = document.querySelector(`[data-action="${action}"]`);
@@ -109,7 +153,7 @@ async function executeAction(action, npcId = null) {
         const response = await fetch(`${API_BASE}/api/game/${sessionId}/action`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, npcId })
+            body: JSON.stringify({ action, npcId, combatDecision })
         });
         
         if (!response.ok) throw new Error('Failed to execute action');
@@ -120,6 +164,12 @@ async function executeAction(action, npcId = null) {
         // Show result message
         addMessage(data.result.message, data.result.success ? 'success' : 'error');
         
+        // Update health in status bar
+        if (data.health !== undefined) {
+            document.getElementById('health').textContent = data.health;
+            document.getElementById('max-health').textContent = data.maxHealth || 100;
+        }
+        
         // Show event if any
         if (data.result.event) {
             addMessage('⚡ EVENT: ' + data.result.event.text, 'event');
@@ -127,6 +177,95 @@ async function executeAction(action, npcId = null) {
         
         if (data.result.npcEvent) {
             addMessage('⚡ NPC EVENT: ' + data.result.npcEvent.text, 'event');
+        }
+        
+        // Show encounter if any
+        if (data.result.encounter) {
+            addMessage('🎯 ENCOUNTER: ' + data.result.encounter.message, 'event');
+            if (data.result.encounter.rewards) {
+                const encounterRewards = [];
+                if (data.result.encounter.rewards.xp) encounterRewards.push(`+${data.result.encounter.rewards.xp} XP`);
+                if (data.result.encounter.rewards.statBonus) {
+                    Object.entries(data.result.encounter.rewards.statBonus).forEach(([stat, value]) => {
+                        encounterRewards.push(`+${value} ${stat.toUpperCase()}`);
+                    });
+                }
+                if (data.result.encounter.rewards.wealth) encounterRewards.push(`+${data.result.encounter.rewards.wealth} Wealth`);
+                if (data.result.encounter.rewards.materials) encounterRewards.push(`+${data.result.encounter.rewards.materials} Materials`);
+                if (encounterRewards.length > 0) {
+                    addMessage('🎁 Encounter Rewards: ' + encounterRewards.join(', '), 'success');
+                }
+            }
+        }
+        
+        // Show explore encounter (wild animal) - requires player decision
+        if (data.result.exploreEncounter && data.result.exploreEncounter.requiresDecision) {
+            showCombatModal(data.result.exploreEncounter.animal);
+            // Don't update UI yet - wait for player decision
+            if (actionBtn) actionBtn.disabled = false;
+            return;
+        }
+        
+        // Show combat result if any
+        if (data.result.combatResult) {
+            const combat = data.result.combatResult;
+            const combatMessage = document.getElementById('combat-message');
+            
+            // Update player health bar in combat window
+            if (data.health !== undefined && data.maxHealth !== undefined) {
+                const playerHealthBar = document.getElementById('player-health-bar');
+                const playerHealthText = document.getElementById('player-health-text');
+                if (playerHealthBar) {
+                    const healthPercent = (data.health / data.maxHealth) * 100;
+                    playerHealthBar.style.width = `${healthPercent}%`;
+                    // Change color based on health level
+                    if (healthPercent < 25) {
+                        playerHealthBar.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
+                    } else if (healthPercent < 50) {
+                        playerHealthBar.style.background = 'linear-gradient(90deg, #f59e0b, #d97706)';
+                    } else {
+                        playerHealthBar.style.background = 'linear-gradient(90deg, #10b981, #059669)';
+                    }
+                }
+                if (playerHealthText) {
+                    playerHealthText.textContent = `${data.health}/${data.maxHealth}`;
+                }
+            }
+            
+            if (combat.victory) {
+                if (combatMessage) {
+                    combatMessage.textContent = `✅ ${combat.message}`;
+                    combatMessage.style.borderLeftColor = '#10b981';
+                }
+                addMessage(`✅ ${combat.message}`, 'success');
+                if (combat.rewards) {
+                    const rewards = [];
+                    if (combat.rewards.xp) rewards.push(`+${combat.rewards.xp} XP`);
+                    if (combat.rewards.food) rewards.push(`+${combat.rewards.food} Food`);
+                    if (combat.rewards.materials) rewards.push(`+${combat.rewards.materials} Materials`);
+                    if (combat.rewards.wealth) rewards.push(`+${combat.rewards.wealth} Wealth`);
+                    if (rewards.length > 0) {
+                        const rewardText = '🎁 Combat Rewards: ' + rewards.join(', ');
+                        if (combatMessage) {
+                            combatMessage.textContent += '\n' + rewardText;
+                        }
+                        addMessage(rewardText, 'success');
+                    }
+                }
+            } else {
+                if (combatMessage) {
+                    combatMessage.textContent = `❌ ${combat.message}`;
+                    combatMessage.style.borderLeftColor = '#ef4444';
+                }
+                addMessage(`❌ ${combat.message}`, 'error');
+            }
+            if (combat.damageTaken > 0) {
+                const damageText = `💔 You took ${combat.damageTaken} damage! Health: ${data.health}/${data.maxHealth}`;
+                if (combatMessage) {
+                    combatMessage.textContent += '\n' + damageText;
+                }
+                addMessage(damageText, 'error');
+            }
         }
         
         // Show rewards
@@ -228,16 +367,24 @@ async function showLoadScreen() {
 }
 
 async function loadGame(filepath) {
-    try {
-        const response = await fetch(`${API_BASE}/api/game/load`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filepath })
-        });
-        
-        if (!response.ok) throw new Error('Failed to load game');
+        try {
+            // Load permanent config and NPCs
+            const permanentConfig = getPermanentConfig();
+            const permanentNPCs = getPermanentNPCs();
+            
+            const response = await fetch(`${API_BASE}/api/game/load`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filepath, permanentConfig, permanentNPCs })
+            });
         
         const data = await response.json();
+        
+        if (!response.ok) {
+            const errorMsg = data.error || 'Failed to load game';
+            throw new Error(errorMsg);
+        }
+        
         sessionId = data.sessionId;
         localStorage.setItem('gameSessionId', sessionId);
         gameState = data;
@@ -247,6 +394,7 @@ async function loadGame(filepath) {
         addMessage('✅ Game loaded successfully!', 'success');
     } catch (error) {
         addMessage('Error loading game: ' + error.message, 'error');
+        console.error('Load game error:', error);
     }
 }
 
@@ -265,10 +413,12 @@ function showGameScreen() {
 function updateUI() {
     if (!gameState) return;
     
-    // Update day and stamina
+    // Update day, stamina, and health in status bar
     document.getElementById('current-day').textContent = gameState.day || 1;
     document.getElementById('stamina').textContent = gameState.stamina || 0;
     document.getElementById('max-stamina').textContent = gameState.maxStamina || 5;
+    document.getElementById('health').textContent = gameState.health || 100;
+    document.getElementById('max-health').textContent = gameState.maxHealth || 100;
     
     // Update player status
     if (gameState.player) {
@@ -359,6 +509,30 @@ function updateUI() {
         `;
     }
     
+    // Update world state
+    if (gameState.worldState) {
+        const worldStatus = document.getElementById('world-status');
+        const ws = gameState.worldState;
+        worldStatus.innerHTML = `
+            <div class="status-item">
+                <span>Season:</span>
+                <span>${ws.season}</span>
+            </div>
+            <div class="status-item">
+                <span>World Age:</span>
+                <span>${ws.age} days</span>
+            </div>
+            <div class="status-item" style="margin-top: 6px;">
+                <span>World:</span>
+            </div>
+            <div class="stat-bar">
+                <span>Pros:${ws.worldResources.prosperity}</span>
+                <span>Stab:${ws.worldResources.stability}</span>
+                <span>Ten:${ws.worldResources.tension}</span>
+            </div>
+        `;
+    }
+    
     // Update NPCs
     if (gameState.npcs) {
         const npcsList = document.getElementById('npcs-list');
@@ -404,6 +578,9 @@ function updateUI() {
         });
     }
     
+    // Render map
+    renderMap();
+    
     // Update action buttons based on stamina
     const stamina = gameState.stamina || 0;
     document.querySelectorAll('.action-btn').forEach(btn => {
@@ -448,5 +625,213 @@ function addMessage(text, type = 'info') {
     if (messageElements.length > 20) {
         messageElements[0].remove();
     }
+}
+
+// Map rendering functions
+function renderMap() {
+    const mapCanvas = document.getElementById('map-canvas');
+    if (!mapCanvas || !gameState) return;
+    
+    mapCanvas.innerHTML = '';
+    
+    // Add location labels
+    const locations = [
+        { name: 'Stonefang Village', x: '50%', y: '40%', left: true }
+    ];
+    
+    locations.forEach(loc => {
+        const locationEl = document.createElement('div');
+        locationEl.className = 'map-location';
+        locationEl.textContent = loc.name;
+        locationEl.style.left = loc.x;
+        locationEl.style.top = loc.y;
+        if (loc.left) locationEl.style.transform = 'translateX(-50%)';
+        mapCanvas.appendChild(locationEl);
+    });
+    
+    // Render NPCs
+    if (gameState.npcs) {
+        const encounteredNPCs = gameState.npcs.filter(npc => npc.encountered || npc.flags?.met);
+        
+        encounteredNPCs.forEach(npc => {
+            if (!npc.location) return;
+            
+            const marker = document.createElement('div');
+            marker.className = `npc-marker ${npc.disposition.toLowerCase()}`;
+            marker.style.left = `${npc.location.x}px`;
+            marker.style.top = `${npc.location.y}px`;
+            marker.title = `${npc.name} (${npc.role})`;
+            
+            const roleEmoji = getRoleEmoji(npc.role);
+            marker.textContent = roleEmoji;
+            
+            // Tooltip
+            const tooltip = document.createElement('div');
+            tooltip.className = 'npc-tooltip';
+            const relationship = gameState.player.relationships[npc.id] || 50;
+            tooltip.innerHTML = `
+                <h3>${npc.name}</h3>
+                <p><strong>Role:</strong> ${npc.role}</p>
+                <p><strong>Level:</strong> ${npc.level || 1}</p>
+                <p><strong>Disposition:</strong> ${npc.disposition}</p>
+                <div class="relationship-bar">
+                    <div class="relationship-fill" style="width: ${relationship}%"></div>
+                </div>
+                <p style="margin-top: 6px;"><strong>Relationship:</strong> ${relationship}/100</p>
+            `;
+            
+            marker.addEventListener('mouseenter', (e) => {
+                const rect = marker.getBoundingClientRect();
+                const mapRect = mapCanvas.getBoundingClientRect();
+                tooltip.style.left = `${rect.left - mapRect.left + 60}px`;
+                tooltip.style.top = `${rect.top - mapRect.top - 10}px`;
+                tooltip.classList.add('visible');
+            });
+            
+            marker.addEventListener('mouseleave', () => {
+                tooltip.classList.remove('visible');
+            });
+            
+            marker.addEventListener('click', () => {
+                interactWithNPCFromMap(npc.id);
+            });
+            
+            mapCanvas.appendChild(marker);
+            mapCanvas.appendChild(tooltip);
+        });
+    }
+}
+
+function getRoleEmoji(role) {
+    const roleEmojis = {
+        'Merchant': '💰',
+        'Warrior': '⚔️',
+        'Elder': '👴',
+        'Hunter': '🏹',
+        'Farmer': '🌾',
+        'Mystic': '🔮'
+    };
+    return roleEmojis[role] || '👤';
+}
+
+async function interactWithNPCFromMap(npcId) {
+    if (!sessionId) return;
+    
+    try {
+        const response = await fetch(`/api/game/${sessionId}/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'visit',
+                npcId: npcId
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to interact with NPC');
+        }
+        
+        const data = await response.json();
+        
+        // Show result message
+        addMessage(data.result.message, data.result.success ? 'success' : 'error');
+        
+        // Show encounter if any
+        if (data.result.encounter) {
+            addMessage('🎯 ENCOUNTER: ' + data.result.encounter.message, 'event');
+            if (data.result.encounter.rewards) {
+                const encounterRewards = [];
+                if (data.result.encounter.rewards.xp) encounterRewards.push(`+${data.result.encounter.rewards.xp} XP`);
+                if (data.result.encounter.rewards.statBonus) {
+                    Object.entries(data.result.encounter.rewards.statBonus).forEach(([stat, value]) => {
+                        encounterRewards.push(`+${value} ${stat.toUpperCase()}`);
+                    });
+                }
+                if (data.result.encounter.rewards.wealth) encounterRewards.push(`+${data.result.encounter.rewards.wealth} Wealth`);
+                if (data.result.encounter.rewards.materials) encounterRewards.push(`+${data.result.encounter.rewards.materials} Materials`);
+                if (encounterRewards.length > 0) {
+                    addMessage('🎁 Encounter Rewards: ' + encounterRewards.join(', '), 'success');
+                }
+            }
+        }
+        
+        // Update game state and UI
+        await loadGameState();
+    } catch (error) {
+        addMessage('Error interacting with NPC: ' + error.message, 'error');
+    }
+}
+
+function showCombatModal(animal) {
+    currentCombatAnimal = animal;
+    const combatWindow = document.getElementById('combat-window');
+    
+    if (!combatWindow) return;
+    
+    // Get player data
+    const player = gameState.player;
+    
+    // Update enemy info
+    document.getElementById('enemy-name').textContent = animal.name;
+    document.getElementById('enemy-level').textContent = `Lv. ${animal.level}`;
+    document.getElementById('enemy-health-text').textContent = `${animal.stats.health}/${animal.stats.maxHealth}`;
+    document.getElementById('enemy-health-bar').style.width = `${(animal.stats.health / animal.stats.maxHealth) * 100}%`;
+    document.getElementById('enemy-str').textContent = animal.stats.str;
+    document.getElementById('enemy-dex').textContent = animal.stats.dex;
+    document.getElementById('enemy-damage').textContent = animal.damage;
+    
+    // Set enemy emoji based on name
+    const enemyEmojis = {
+        'Wild Boar': '🐗',
+        'Dire Wolf': '🐺',
+        'Mountain Bear': '🐻',
+        'Shadow Panther': '🐆',
+        'Ancient Stag': '🦌'
+    };
+    const enemyEmoji = enemyEmojis[animal.name] || '🐺';
+    document.getElementById('enemy-emoji').textContent = enemyEmoji;
+    
+    // Update player info
+    document.getElementById('player-combat-name').textContent = player.name;
+    document.getElementById('player-combat-level').textContent = `Lv. ${player.level}`;
+    const playerHealth = gameState.health || player.health || 100;
+    const playerMaxHealth = gameState.maxHealth || player.maxHealth || 100;
+    document.getElementById('player-health-text').textContent = `${playerHealth}/${playerMaxHealth}`;
+    document.getElementById('player-health-bar').style.width = `${(playerHealth / playerMaxHealth) * 100}%`;
+    document.getElementById('player-str').textContent = player.stats.str;
+    document.getElementById('player-dex').textContent = player.stats.dex;
+    document.getElementById('player-luck').textContent = player.stats.luck;
+    
+    // Clear combat message
+    document.getElementById('combat-message').textContent = `You encounter a ${animal.name}! Choose your action...`;
+    
+    // Show combat window
+    combatWindow.classList.add('active');
+}
+
+// Helper function to get permanent config from localStorage
+function getPermanentConfig() {
+    try {
+        const savedConfig = localStorage.getItem('gameMasterConfig');
+        if (savedConfig) {
+            return JSON.parse(savedConfig);
+        }
+    } catch (error) {
+        console.error('Error loading permanent config:', error);
+    }
+    return null;
+}
+
+// Helper function to get permanent NPCs from localStorage
+function getPermanentNPCs() {
+    try {
+        const savedNPCs = localStorage.getItem('permanentNPCs');
+        if (savedNPCs) {
+            return JSON.parse(savedNPCs);
+        }
+    } catch (error) {
+        console.error('Error loading permanent NPCs:', error);
+    }
+    return null;
 }
 

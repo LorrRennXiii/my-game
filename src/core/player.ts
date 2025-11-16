@@ -38,6 +38,8 @@ export class PlayerManager {
       },
       stamina: 5,
       maxStamina: 5,
+      health: 100,
+      maxHealth: 100,
       relationships: {},
       flags: {}
     };
@@ -47,15 +49,19 @@ export class PlayerManager {
     return { ...this.player };
   }
 
-  getEffectiveStamina(): number {
+  getEffectiveStamina(baseStamina: number = 5, staminaRegenBonus: number = 1): number {
     // effective_stamina = base_stamina + stamina_bonus_from_skills - fatigue_penalty
     const staminaBonus = Math.floor((this.player.skills.farming + this.player.skills.gathering) / 3);
     const fatiguePenalty = 0; // Can be implemented later based on consecutive days
-    return this.player.maxStamina + staminaBonus - fatiguePenalty;
+    return baseStamina + staminaBonus + staminaRegenBonus - fatiguePenalty;
   }
 
   getCurrentStamina(): number {
     return this.player.stamina;
+  }
+
+  getMaxStamina(): number {
+    return this.player.maxStamina;
   }
 
   spendStamina(amount: number): boolean {
@@ -66,13 +72,15 @@ export class PlayerManager {
     return false;
   }
 
-  restoreStamina(): void {
-    this.player.stamina = this.getEffectiveStamina();
+  restoreStamina(baseStamina: number = 5, staminaRegenBonus: number = 1): void {
+    this.player.stamina = this.getEffectiveStamina(baseStamina, staminaRegenBonus);
+    this.player.maxStamina = this.player.stamina;
   }
 
-  addXP(amount: number): boolean {
-    this.player.xp += amount;
-    const levelUpThreshold = this.player.level * 10;
+  addXP(amount: number, xpMultiplier: number = 1.0, levelUpMultiplier: number = 1.0): boolean {
+    const adjustedAmount = Math.floor(amount * xpMultiplier);
+    this.player.xp += adjustedAmount;
+    const levelUpThreshold = Math.floor(this.player.level * 10 * levelUpMultiplier);
     
     if (this.player.xp >= levelUpThreshold) {
       this.levelUp();
@@ -81,18 +89,36 @@ export class PlayerManager {
     return false;
   }
 
-  private levelUp(): void {
+  private levelUp(statPoints: number = 2): void {
     this.player.level += 1;
     this.player.xp = 0;
     
-    // Distribute stat points on level up
-    const statPoints = 2;
-    // For now, auto-distribute evenly (can be made player choice later)
+    // RNG for max stamina increase (90% chance for +1, 10% chance for +2)
+    const staminaRoll = Math.random();
+    const staminaIncrease = staminaRoll < 0.9 ? 1 : 2;
+    this.player.maxStamina += staminaIncrease;
+    this.player.stamina += staminaIncrease; // Also restore current stamina
+    
+    // RNG for max health increase (90% chance for +10, 10% chance for +20)
+    const healthRoll = Math.random();
+    const healthIncrease = healthRoll < 0.9 ? 10 : 20;
+    this.player.maxHealth += healthIncrease;
+    this.player.health += healthIncrease; // Also restore current health
+    
+    // RNG for stat points distribution
+    // Each stat point has 90% chance to be +1, 10% chance to be +2
     const stats = ['str', 'dex', 'wis', 'cha', 'luck'] as const;
     for (let i = 0; i < statPoints; i++) {
       const stat = stats[Math.floor(Math.random() * stats.length)];
-      this.player.stats[stat] += 1;
+      const statRoll = Math.random();
+      const statIncrease = statRoll < 0.9 ? 1 : 2;
+      this.player.stats[stat] += statIncrease;
     }
+  }
+
+  setLevelUpStatPoints(statPoints: number): void {
+    // This will be used by config manager
+    // We'll need to store this in player or pass it to levelUp
   }
 
   improveSkill(skill: keyof PlayerSkills, amount: number = 1): void {
@@ -109,6 +135,10 @@ export class PlayerManager {
     return this.player.stats[stat];
   }
 
+  improveStat(stat: keyof PlayerStats, amount: number = 1): void {
+    this.player.stats[stat] = Math.max(1, this.player.stats[stat] + amount);
+  }
+
   updateInventory(updates: Partial<PlayerInventory>): void {
     Object.entries(updates).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -122,12 +152,13 @@ export class PlayerManager {
     return { ...this.player.inventory };
   }
 
-  updateRelationship(npcId: string, change: number): void {
+  updateRelationship(npcId: string, change: number, multiplier: number = 1.0): void {
     if (!this.player.relationships[npcId]) {
       this.player.relationships[npcId] = 50; // Start neutral
     }
+    const adjustedChange = Math.floor(change * multiplier)
     this.player.relationships[npcId] = Math.max(0, Math.min(100, 
-      this.player.relationships[npcId] + change
+      this.player.relationships[npcId] + adjustedChange
     ));
   }
 
@@ -153,6 +184,26 @@ export class PlayerManager {
 
   setJob(job: string): void {
     this.player.job = job;
+  }
+
+  getHealth(): number {
+    return this.player.health;
+  }
+
+  getMaxHealth(): number {
+    return this.player.maxHealth;
+  }
+
+  takeDamage(amount: number): void {
+    this.player.health = Math.max(0, this.player.health - amount);
+  }
+
+  heal(amount: number): void {
+    this.player.health = Math.min(this.player.maxHealth, this.player.health + amount);
+  }
+
+  restoreHealth(): void {
+    this.player.health = this.player.maxHealth;
   }
 }
 

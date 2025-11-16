@@ -4,6 +4,9 @@ import { NPCManager } from './core/npc.js'
 import { EventManager } from './core/events.js'
 import { ActionManager } from './core/actions.js'
 import { SaveManager } from './core/saveLoad.js'
+import { WorldManager, type WorldState } from './core/world.js'
+import { EncounterManager, type EncounterEvent } from './core/encounters.js'
+import { GameConfigManager, type GameConfig } from './core/gameConfig.js'
 import type { Player, Tribe, NPC, Event } from './types.js'
 
 export class GameLoop {
@@ -13,15 +16,21 @@ export class GameLoop {
   private eventManager: EventManager
   private actionManager: ActionManager
   private saveManager: SaveManager
+  private worldManager: WorldManager
+  private encounterManager: EncounterManager
+  private configManager: GameConfigManager
   private day: number
   private onDayEnd?: (day: number, player: Player, tribe: Tribe) => void
   private onEvent?: (event: Event) => void
+  private lastNPCEncounters: Map<string, { day: number; level: number }> = new Map()
 
   constructor(
     player?: Player,
     tribe?: Tribe,
     npcs: NPC[] = [],
-    events: Event[] = []
+    events: Event[] = [],
+    worldState?: WorldState,
+    gameConfig?: Partial<GameConfig>
   ) {
     this.playerManager = new PlayerManager(player)
     this.tribeManager = new TribeManager(tribe)
@@ -29,6 +38,9 @@ export class GameLoop {
     this.eventManager = new EventManager(events)
     this.actionManager = new ActionManager(this.playerManager, this.tribeManager)
     this.saveManager = new SaveManager()
+    this.worldManager = new WorldManager(worldState)
+    this.encounterManager = new EncounterManager()
+    this.configManager = new GameConfigManager(gameConfig)
     this.day = 1
   }
 
@@ -43,14 +55,12 @@ export class GameLoop {
   startDay(): void {
     const player = this.playerManager.getPlayer()
     const tribe = this.tribeManager.getTribe()
+    const config = this.configManager.getConfig()
 
     // Restore stamina with morale bonus
     const staminaRegen = this.tribeManager.getStaminaRegenBonus()
-    this.playerManager.restoreStamina()
-    if (staminaRegen > 0) {
-      const currentStamina = this.playerManager.getCurrentStamina()
-      this.playerManager.spendStamina(-staminaRegen) // Negative to add
-    }
+    const totalStaminaRegen = staminaRegen + config.staminaRegenBonus
+    this.playerManager.restoreStamina(config.baseStamina, totalStaminaRegen)
 
     // Check for daily event
     const dailyEvent = this.eventManager.checkDailyEvent()
@@ -71,11 +81,37 @@ export class GameLoop {
     }
   }
 
-  executeAction(actionType: string, npcId?: string): any {
+  executeAction(actionType: string, npcId?: string, combatDecision?: 'fight' | 'flee'): any {
     // Check for action event
     const actionEvent = this.eventManager.checkActionEvent(actionType)
 
     const result = this.actionManager.executeAction(actionType as any, npcId)
+    
+    // Handle explore encounters with combat
+    if (actionType === 'explore' && result.exploreEncounter && combatDecision) {
+      if (combatDecision === 'fight') {
+        const combatResult = this.actionManager.executeCombat(result.exploreEncounter.animal)
+        result.combatResult = combatResult
+        result.message = combatResult.message
+        if (combatResult.victory && combatResult.rewards) {
+          result.rewards = combatResult.rewards
+        }
+      } else {
+        // Player fled - take some damage but less than fighting
+        const player = this.playerManager.getPlayer()
+        const fleeDamage = Math.floor(result.exploreEncounter.animal.damage * 0.3)
+        this.playerManager.takeDamage(fleeDamage)
+        result.message = `You fled from the ${result.exploreEncounter.animal.name} but took ${fleeDamage} damage in the escape.`
+        result.combatResult = {
+          victory: false,
+          damageTaken: fleeDamage,
+          damageDealt: 0,
+          message: result.message
+        }
+      }
+      // Remove the encounter flag since it's been resolved
+      delete result.exploreEncounter
+    }
 
     // Apply action event if triggered
     if (actionEvent) {
@@ -86,17 +122,97 @@ export class GameLoop {
       result.event = actionEvent
     }
 
-    // Check for NPC event if visiting
+    // Check for NPC encounter events if visiting
     if (actionType === "visit" && npcId) {
       const player = this.playerManager.getPlayer()
-      const relationship = this.playerManager.getRelationship(npcId)
-      const npcEvent = this.eventManager.checkNPCEvent(npcId, relationship)
-      if (npcEvent) {
-        this.eventManager.applyEventEffects(npcEvent, this.tribeManager, player)
-        if (this.onEvent) {
-          this.onEvent(npcEvent)
+      const npc = this.npcManager.getNPC(npcId)
+      
+      if (npc) {
+        // Mark NPC as encountered
+        npc.encountered = true
+        npc.flags.met = true
+        
+        // Record encounter
+        this.worldManager.recordNPCEncounter(npcId, this.day)
+        const lastEncounter = this.lastNPCEncounters.get(npcId)
+        const daysSince = this.worldManager.getDaysSinceEncounter(npcId, this.day)
+        const lastLevel = lastEncounter?.level || 1
+        const currentLevel = npc.level || 1
+
+        // Check for encounter events
+        const worldState = this.worldManager.getWorldState()
+        const availableEncounters = this.encounterManager.getAvailableEncounters(
+          npc,
+          player,
+          worldState,
+          daysSince
+        )
+
+        const encounterChance = this.configManager.getEncounterChance() / 100
+        if (availableEncounters.length > 0 && Math.random() < encounterChance) {
+          // Configurable chance to trigger an encounter
+          const encounter = availableEncounters[Math.floor(Math.random() * availableEncounters.length)]
+          const encounterResult = this.encounterManager.executeEncounter(encounter, npc, player)
+
+          // Apply encounter rewards
+          if (encounterResult.rewards) {
+            if (encounterResult.rewards.xp) {
+              const xpMultiplier = this.configManager.getXpMultiplier()
+              const levelUpMultiplier = this.configManager.getLevelUpXpMultiplier()
+              this.playerManager.addXP(encounterResult.rewards.xp, xpMultiplier, levelUpMultiplier)
+            }
+            if (encounterResult.rewards.statBonus) {
+              Object.entries(encounterResult.rewards.statBonus).forEach(([stat, value]) => {
+                this.playerManager.improveStat(stat as any, value || 1)
+              })
+            }
+            if (encounterResult.rewards.skillBonus) {
+              Object.entries(encounterResult.rewards.skillBonus).forEach(([skill, value]) => {
+                this.playerManager.improveSkill(skill as any, value || 1)
+              })
+            }
+            if (encounterResult.rewards.items) {
+              this.playerManager.updateInventory(encounterResult.rewards.items)
+            }
+            if (encounterResult.rewards.food) {
+              this.playerManager.updateInventory({ food: encounterResult.rewards.food })
+            }
+            if (encounterResult.rewards.materials) {
+              this.playerManager.updateInventory({ materials: encounterResult.rewards.materials })
+            }
+            if (encounterResult.rewards.wealth) {
+              this.playerManager.updateInventory({ wealth: encounterResult.rewards.wealth })
+            }
+            if (encounterResult.rewards.spirit_energy) {
+              this.playerManager.updateInventory({ spirit_energy: encounterResult.rewards.spirit_energy })
+            }
+            if (encounterResult.rewards.relationship) {
+              this.playerManager.updateRelationship(npcId, encounterResult.rewards.relationship)
+            }
+          }
+
+          // Apply world effects
+          if (encounterResult.effects) {
+            // World effects would be applied to world state
+            // This could affect future events
+          }
+
+          result.encounter = encounterResult
         }
-        result.npcEvent = npcEvent
+
+        // Update last encounter record
+        this.lastNPCEncounters.set(npcId, { day: this.day, level: currentLevel })
+
+        // Check for regular NPC event
+        const relationship = this.playerManager.getRelationship(npcId)
+        const npcEvent = this.eventManager.checkNPCEvent(npcId, relationship)
+        if (npcEvent) {
+          this.eventManager.applyEventEffects(npcEvent, this.tribeManager, player)
+          if (this.onEvent) {
+            this.onEvent(npcEvent)
+          }
+          result.npcEvent = npcEvent
+        }
       }
     }
 
@@ -109,6 +225,28 @@ export class GameLoop {
 
     const player = this.playerManager.getPlayer()
     const tribe = this.tribeManager.getTribe()
+
+    // Advance world state
+    const worldProgression = this.worldManager.advanceDay(this.day)
+    const worldMessages: string[] = []
+
+    if (worldProgression.seasonChanged) {
+      worldMessages.push(`🌍 Season changed to ${this.worldManager.getWorldState().season}`)
+    }
+
+    if (worldProgression.majorEvent) {
+      worldMessages.push(`🌍 World Event: ${worldProgression.majorEvent}`)
+      if (this.onEvent) {
+        // Create a pseudo-event for world events
+        const worldEvent: Event = {
+          id: `world_event_${this.day}`,
+          type: 'daily',
+          text: worldProgression.majorEvent,
+          effects: worldProgression.worldChanges
+        }
+        this.onEvent(worldEvent)
+      }
+    }
 
     // Process NPC growth
     const relationshipBonus: Record<string, number> = {}
@@ -124,8 +262,8 @@ export class GameLoop {
     // Start the new day (restores stamina)
     this.startDay()
 
-    // Return growth messages for display
-    return growthMessages
+    // Return all messages for display
+    return [...worldMessages, ...growthMessages]
   }
 
   getPlayer(): Player {
@@ -157,7 +295,21 @@ export class GameLoop {
   }
 
   getMaxStamina(): number {
-    return this.playerManager.getEffectiveStamina()
+    // Return the maxStamina that was set during restoreStamina
+    // This ensures consistency with what was actually restored
+    return this.playerManager.getMaxStamina()
+  }
+
+  getHealth(): number {
+    return this.playerManager.getHealth()
+  }
+
+  getMaxHealth(): number {
+    return this.playerManager.getMaxHealth()
+  }
+
+  executeCombat(animal: any): any {
+    return this.actionManager.executeCombat(animal)
   }
 
   setPlayerName(name: string): void {
@@ -187,13 +339,36 @@ export class GameLoop {
   }
 
   async loadGame(filepath: string): Promise<void> {
-    const saveData = await this.saveManager.loadGame(filepath)
+    try {
+      const saveData = await this.saveManager.loadGame(filepath)
 
-    this.playerManager = new PlayerManager(saveData.player)
-    this.tribeManager = new TribeManager(saveData.tribe)
-    this.npcManager = new NPCManager(saveData.npcs)
-    this.actionManager = new ActionManager(this.playerManager, this.tribeManager)
-    this.day = saveData.day
+      // Validate save data
+      if (!saveData.player) {
+        throw new Error('Save file is missing player data')
+      }
+      if (!saveData.tribe) {
+        throw new Error('Save file is missing tribe data')
+      }
+      if (!saveData.npcs) {
+        throw new Error('Save file is missing NPC data')
+      }
+
+      this.playerManager = new PlayerManager(saveData.player)
+      this.tribeManager = new TribeManager(saveData.tribe)
+      this.npcManager = new NPCManager(saveData.npcs)
+      this.configManager = new GameConfigManager(saveData.gameConfig)
+      this.actionManager = new ActionManager(this.playerManager, this.tribeManager, this.configManager)
+      this.worldManager = new WorldManager(saveData.worldState)
+      this.day = saveData.day || 1
+
+      // Restore last NPC encounters
+      if (saveData.lastNPCEncounters) {
+        this.lastNPCEncounters = new Map(Object.entries(saveData.lastNPCEncounters))
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to load game: ${errorMessage}`)
+    }
   }
 
   async listSaves(): Promise<string[]> {
@@ -217,6 +392,33 @@ export class GameLoop {
       level: npc.level || 1,
       stats: npc.stats
     }
+  }
+
+  getWorldState(): WorldState {
+    return this.worldManager.getWorldState()
+  }
+
+  getAvailableEncounters(npcId: string): EncounterEvent[] {
+    const npc = this.npcManager.getNPC(npcId)
+    const player = this.playerManager.getPlayer()
+    const worldState = this.worldManager.getWorldState()
+    
+    if (!npc) return []
+    
+    const daysSince = this.worldManager.getDaysSinceEncounter(npcId, this.day)
+    return this.encounterManager.getAvailableEncounters(npc, player, worldState, daysSince)
+  }
+
+  getGameConfig(): GameConfig {
+    return this.configManager.getConfig()
+  }
+
+  updateGameConfig(updates: Partial<GameConfig>): void {
+    this.configManager.updateConfig(updates)
+  }
+
+  setDifficulty(difficulty: 'Easy' | 'Normal' | 'Hard'): void {
+    this.configManager.setDifficulty(difficulty)
   }
 }
 

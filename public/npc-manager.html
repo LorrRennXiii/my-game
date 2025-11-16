@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPC Manager - Three Tribes Chronicle</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .npc-manager-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .manager-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .session-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .session-selector input {
+            padding: 10px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 1rem;
+            width: 300px;
+        }
+
+        .npc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .npc-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .npc-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+        }
+
+        .stat-input {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-input label {
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+        }
+
+        .stat-input input {
+            width: 100%;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .message {
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .message.success {
+            border-left-color: var(--success-color);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .message.error {
+            border-left-color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="npc-manager-container">
+        <a href="index.html" class="back-link">← Back to Game</a>
+        
+        <div class="manager-header">
+            <h1>👥 NPC Manager</h1>
+            <div class="session-selector">
+                <input type="text" id="session-id-input" placeholder="Enter game session ID (optional)">
+                <button class="btn btn-primary" id="load-session-btn">Load Session NPCs</button>
+                <button class="btn btn-secondary" id="load-base-btn">Load Base NPCs</button>
+                <button class="btn btn-primary" id="save-permanent-btn">💾 Save Permanent NPCs</button>
+                <button class="btn btn-secondary" id="load-permanent-btn">📂 Load Permanent NPCs</button>
+            </div>
+        </div>
+
+        <div id="messages"></div>
+
+        <div id="npcs-container">
+            <div class="npc-grid" id="npcs-grid"></div>
+        </div>
+    </div>
+
+    <script src="npc-manager.js"></script>
+</body>
+</html>
+

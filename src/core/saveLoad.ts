@@ -2,6 +2,8 @@ import { promises as fs } from 'fs'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import type { Player, Tribe, NPC } from '../types.js'
+import type { WorldState } from './world.js'
+import type { GameConfig } from './gameConfig.js'
 
 export interface SaveData {
   player: Player
@@ -9,6 +11,9 @@ export interface SaveData {
   npcs: NPC[]
   day: number
   timestamp: number
+  worldState?: WorldState
+  lastNPCEncounters?: Record<string, { day: number; level: number }>
+  gameConfig?: Partial<GameConfig>
 }
 
 export class SaveManager {
@@ -37,7 +42,15 @@ export class SaveManager {
     }
   }
 
-  async saveGame(player: Player, tribe: Tribe, npcs: NPC[], day: number): Promise<string> {
+  async saveGame(
+    player: Player, 
+    tribe: Tribe, 
+    npcs: NPC[], 
+    day: number, 
+    worldState?: WorldState,
+    lastNPCEncounters?: Record<string, { day: number; level: number }>,
+    gameConfig?: Partial<GameConfig>
+  ): Promise<string> {
     try {
       await this.ensureSaveDir()
 
@@ -46,7 +59,10 @@ export class SaveManager {
         tribe,
         npcs,
         day,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        worldState,
+        lastNPCEncounters,
+        gameConfig
       }
 
       // Validate that we can stringify the data
@@ -71,8 +87,13 @@ export class SaveManager {
   }
 
   async loadGame(filepath: string): Promise<SaveData> {
-    const data = await fs.readFile(filepath, 'utf-8')
-    return JSON.parse(data) as SaveData
+    try {
+      const data = await fs.readFile(filepath, 'utf-8')
+      return JSON.parse(data) as SaveData
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to read save file: ${errorMessage}`)
+    }
   }
 
   async listSaves(): Promise<string[]> {

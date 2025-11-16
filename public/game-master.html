@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Master - Three Tribes Chronicle</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .gm-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .gm-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .session-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .session-selector input {
+            padding: 10px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 1rem;
+            width: 300px;
+        }
+
+        .config-section {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .config-section h2 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .config-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-item label {
+            margin-bottom: 5px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .config-item input,
+        .config-item select {
+            padding: 8px;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .config-item input:focus,
+        .config-item select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .config-item input[type="number"] {
+            width: 100%;
+        }
+
+        .difficulty-presets {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .preset-btn {
+            padding: 10px 20px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .preset-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--primary-color);
+        }
+
+        .preset-btn.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .message {
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .message.success {
+            border-left-color: var(--success-color);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .message.error {
+            border-left-color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .info-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="gm-container">
+        <a href="index.html" class="back-link">← Back to Game</a>
+        
+        <div class="gm-header">
+            <h1>🎮 Game Master Control Panel</h1>
+            <div class="session-selector">
+                <input type="text" id="session-id-input" placeholder="Enter game session ID">
+                <button class="btn btn-primary" id="load-config-btn">Load Config</button>
+            </div>
+        </div>
+
+        <div id="messages"></div>
+
+        <div id="config-container">
+            <!-- Difficulty Presets -->
+            <div class="config-section">
+                <h2>⚙️ Difficulty Presets</h2>
+                <div class="difficulty-presets">
+                    <button class="preset-btn" data-difficulty="Easy">Easy</button>
+                    <button class="preset-btn" data-difficulty="Normal">Normal</button>
+                    <button class="preset-btn" data-difficulty="Hard">Hard</button>
+                    <button class="preset-btn" data-difficulty="Custom">Custom</button>
+                </div>
+            </div>
+
+            <!-- Encounter Settings -->
+            <div class="config-section">
+                <h2>🎯 Encounter Settings</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Encounter Chance (%)</label>
+                        <input type="number" id="encounter-chance" min="0" max="100" value="40">
+                        <span class="info-text">Base chance for NPC encounters</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Encounter Cooldown (days)</label>
+                        <input type="number" id="encounter-cooldown" min="0" value="5">
+                        <span class="info-text">Days before same NPC can have another encounter</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progression Settings -->
+            <div class="config-section">
+                <h2>📈 Character Progression</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>XP Multiplier</label>
+                        <input type="number" id="xp-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for XP gains (1.0 = normal)</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Level Up XP Multiplier</label>
+                        <input type="number" id="levelup-xp-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for XP needed per level</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Stat Points Per Level</label>
+                        <input type="number" id="stat-points-per-level" min="0" max="10" value="2">
+                        <span class="info-text">Stat points gained on level up</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Skill Improvement Chance (%)</label>
+                        <input type="number" id="skill-improvement-chance" min="0" max="100" value="30">
+                        <span class="info-text">Chance to improve skill after action</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NPC Progression -->
+            <div class="config-section">
+                <h2>👥 NPC Progression</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>NPC XP Multiplier</label>
+                        <input type="number" id="npc-xp-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for NPC XP gains</span>
+                    </div>
+                    <div class="config-item">
+                        <label>NPC Level Up XP Multiplier</label>
+                        <input type="number" id="npc-levelup-xp-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for NPC XP needed per level</span>
+                    </div>
+                    <div class="config-item">
+                        <label>NPC Growth Rate (%)</label>
+                        <input type="number" id="npc-growth-rate" min="0" max="100" value="50">
+                        <span class="info-text">Base growth rate for NPCs</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- World Progression -->
+            <div class="config-section">
+                <h2>🌍 World Progression</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>World Event Chance (%)</label>
+                        <input type="number" id="world-event-chance" min="0" max="100" value="20">
+                        <span class="info-text">Chance for major world events</span>
+                    </div>
+                    <div class="config-item">
+                        <label>World Event Interval (days)</label>
+                        <input type="number" id="world-event-interval" min="1" value="10">
+                        <span class="info-text">Minimum days between world events</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Season Length (days)</label>
+                        <input type="number" id="season-length" min="1" value="30">
+                        <span class="info-text">Days per season</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Settings -->
+            <div class="config-section">
+                <h2>⚔️ Action Settings</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Action Success Bonus (%)</label>
+                        <input type="number" id="action-success-bonus" min="-50" max="50" value="0">
+                        <span class="info-text">Bonus to action success chance</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Action Reward Multiplier</label>
+                        <input type="number" id="action-reward-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for action rewards</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stamina Settings -->
+            <div class="config-section">
+                <h2>⚡ Stamina Settings</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Base Stamina</label>
+                        <input type="number" id="base-stamina" min="1" max="20" value="5">
+                        <span class="info-text">Base stamina per day</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Stamina Regen Bonus</label>
+                        <input type="number" id="stamina-regen-bonus" min="0" max="5" value="1">
+                        <span class="info-text">Bonus stamina from high morale</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Relationship Settings -->
+            <div class="config-section">
+                <h2>💚 Relationship Settings</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Relationship Gain Multiplier</label>
+                        <input type="number" id="relationship-gain-multiplier" min="0.1" max="5" step="0.1" value="1.0">
+                        <span class="info-text">Multiplier for relationship gains</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Relationship Decay Rate (%)</label>
+                        <input type="number" id="relationship-decay-rate" min="0" max="100" value="0">
+                        <span class="info-text">Relationship decay per day (0 = no decay)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="save-config-btn">💾 Save Permanent Config</button>
+                <button class="btn btn-secondary" id="apply-to-session-btn">➡️ Apply to Session</button>
+                <button class="btn btn-secondary" id="reset-config-btn">🔄 Reset to Defaults</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game-master.js"></script>
+</body>
+</html>
+

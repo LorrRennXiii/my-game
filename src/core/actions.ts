@@ -1,14 +1,24 @@
-import type { ActionType, ActionResult, Player, Tribe, PlayerSkills } from '../types.js';
+import type { ActionType, ActionResult, Player, Tribe, PlayerSkills, WildAnimal, CombatResult } from '../types.js';
 import { PlayerManager } from './player.js';
 import { TribeManager } from './tribe.js';
+import { CombatManager } from './combat.js';
+import type { GameConfigManager } from './gameConfig.js';
 
 export class ActionManager {
   private playerManager: PlayerManager;
   private tribeManager: TribeManager;
+  private combatManager: CombatManager;
+  private configManager?: GameConfigManager;
 
-  constructor(playerManager: PlayerManager, tribeManager: TribeManager) {
+  constructor(playerManager: PlayerManager, tribeManager: TribeManager, configManager?: GameConfigManager) {
     this.playerManager = playerManager;
     this.tribeManager = tribeManager;
+    this.combatManager = new CombatManager();
+    this.configManager = configManager;
+  }
+
+  setConfigManager(configManager: GameConfigManager): void {
+    this.configManager = configManager;
   }
 
   executeAction(actionType: ActionType, npcId?: string): ActionResult {
@@ -43,26 +53,36 @@ export class ActionManager {
     // Apply rewards
     if (result.rewards) {
       if (result.rewards.xp) {
-        const leveledUp = this.playerManager.addXP(result.rewards.xp);
+        const xpMultiplier = this.configManager?.getXpMultiplier() || 1.0
+        const levelUpMultiplier = this.configManager?.getLevelUpXpMultiplier() || 1.0
+        const leveledUp = this.playerManager.addXP(result.rewards.xp, xpMultiplier, levelUpMultiplier);
         if (leveledUp) {
-          result.message += `\n🌟 You leveled up! You are now level ${this.playerManager.getPlayer().level}.`;
+          const player = this.playerManager.getPlayer();
+          result.message += `\n🌟 You leveled up! You are now level ${player.level}.`;
+          result.message += `\n⚡ Your max stamina increased to ${player.maxStamina}!`;
+          result.message += `\n❤️ Your max health increased to ${player.maxHealth}!`;
         }
       }
+      const rewardMultiplier = this.configManager?.getActionRewardMultiplier() || 1.0
       if (result.rewards.food) {
-        this.playerManager.updateInventory({ food: result.rewards.food });
-        this.tribeManager.updateResources({ food: result.rewards.food });
+        const adjustedFood = Math.floor(result.rewards.food * rewardMultiplier)
+        this.playerManager.updateInventory({ food: adjustedFood });
+        this.tribeManager.updateResources({ food: adjustedFood });
       }
       if (result.rewards.materials) {
-        this.playerManager.updateInventory({ materials: result.rewards.materials });
-        this.tribeManager.updateResources({ materials: result.rewards.materials });
+        const adjustedMaterials = Math.floor(result.rewards.materials * rewardMultiplier)
+        this.playerManager.updateInventory({ materials: adjustedMaterials });
+        this.tribeManager.updateResources({ materials: adjustedMaterials });
       }
       if (result.rewards.wealth) {
-        this.playerManager.updateInventory({ wealth: result.rewards.wealth });
-        this.tribeManager.updateResources({ wealth: result.rewards.wealth });
+        const adjustedWealth = Math.floor(result.rewards.wealth * rewardMultiplier)
+        this.playerManager.updateInventory({ wealth: adjustedWealth });
+        this.tribeManager.updateResources({ wealth: adjustedWealth });
       }
       if (result.rewards.spirit_energy) {
-        this.playerManager.updateInventory({ spirit_energy: result.rewards.spirit_energy });
-        this.tribeManager.updateResources({ spirit_energy: result.rewards.spirit_energy });
+        const adjustedSpirit = Math.floor(result.rewards.spirit_energy * rewardMultiplier)
+        this.playerManager.updateInventory({ spirit_energy: adjustedSpirit });
+        this.tribeManager.updateResources({ spirit_energy: adjustedSpirit });
       }
     }
 
@@ -100,9 +120,10 @@ export class ActionManager {
     const baseChance = baseChances[actionType] || 50;
     const relatedStat = this.getRelatedStat(actionType, player);
     const skillLevel = this.getRelatedSkill(actionType, player);
+    const successBonus = this.configManager?.getConfig().actionSuccessBonus || 0
     
-    // success_chance = base_chance + (related_stat * 5%) + (skill_level * 10%) + (luck * 2%)
-    return Math.min(95, baseChance + (relatedStat * 5) + (skillLevel * 10) + (player.stats.luck * 2));
+    // success_chance = base_chance + (related_stat * 5%) + (skill_level * 10%) + (luck * 2%) + config_bonus
+    return Math.min(95, Math.max(5, baseChance + (relatedStat * 5) + (skillLevel * 10) + (player.stats.luck * 2) + successBonus));
   }
 
   private getRelatedStat(actionType: ActionType, player: Player): number {
@@ -202,16 +223,8 @@ export class ActionManager {
         };
       
       case "explore":
-        return {
-          success: true,
-          partial: false,
-          message: "You discover something interesting during your exploration!",
-          rewards: {
-            xp: 5,
-            materials: 3,
-            spirit_energy: 2
-          }
-        };
+        // This is handled by handleExplore method
+        return this.handleExplore(actionType, player, tribe);
       
       default:
         return {
@@ -378,9 +391,91 @@ export class ActionManager {
     };
 
     const skill = skillMap[actionType];
-    if (skill && Math.random() < 0.3) { // 30% chance to improve skill
+    const improvementChance = this.configManager?.getSkillImprovementChance() || 30
+    if (skill && Math.random() < (improvementChance / 100)) {
       this.playerManager.improveSkill(skill, 1);
     }
+  }
+
+  private handleExplore(actionType: ActionType, player: Player, tribe: Tribe): ActionResult {
+    // Explore action - chance to encounter wild animals
+    const encounterChance = 0.4; // 40% chance to encounter an animal
+    
+    if (Math.random() < encounterChance) {
+      // Generate wild animal encounter
+      const animal = this.combatManager.generateWildAnimal(player.level);
+      
+      // Return encounter result that requires player decision
+      return {
+        success: true,
+        partial: false,
+        message: `You encounter a ${animal.name} (Level ${animal.level}) in the wilds!`,
+        exploreEncounter: {
+          animal: animal,
+          requiresDecision: true
+        }
+      };
+    } else {
+      // Normal exploration without encounter
+      const success = Math.random() < this.calculateSuccessChance(actionType, player);
+      
+      if (success) {
+        const xpGain = 5 + Math.floor(Math.random() * 5);
+        const materialGain = 3 + Math.floor(Math.random() * 5);
+        const wealthGain = 2 + Math.floor(Math.random() * 3);
+        
+        return {
+          success: true,
+          partial: false,
+          message: `You explored the wilds and discovered valuable resources!`,
+          rewards: {
+            xp: xpGain,
+            materials: materialGain,
+            wealth: wealthGain
+          }
+        };
+      } else {
+        return {
+          success: false,
+          partial: false,
+          message: "Your exploration yielded nothing. The wilds are dangerous."
+        };
+      }
+    }
+  }
+
+  /**
+   * Execute combat with a wild animal
+   */
+  executeCombat(animal: WildAnimal): CombatResult {
+    const player = this.playerManager.getPlayer();
+    const combatResult = this.combatManager.calculateCombat(player, animal);
+    
+    // Apply damage to player
+    this.playerManager.takeDamage(combatResult.damageTaken);
+    
+    // Apply rewards if victorious
+    if (combatResult.victory && combatResult.rewards) {
+      if (combatResult.rewards.xp) {
+        const xpMultiplier = this.configManager?.getXpMultiplier() || 1.0
+        const levelUpMultiplier = this.configManager?.getLevelUpXpMultiplier() || 1.0
+        this.playerManager.addXP(combatResult.rewards.xp, xpMultiplier, levelUpMultiplier);
+      }
+      if (combatResult.rewards.food) {
+        this.playerManager.updateInventory({ food: combatResult.rewards.food });
+        this.tribeManager.updateResources({ food: combatResult.rewards.food });
+      }
+      if (combatResult.rewards.materials) {
+        this.playerManager.updateInventory({ materials: combatResult.rewards.materials });
+        this.tribeManager.updateResources({ materials: combatResult.rewards.materials });
+      }
+      if (combatResult.rewards.wealth) {
+        this.playerManager.updateInventory({ wealth: combatResult.rewards.wealth });
+        this.tribeManager.updateResources({ wealth: combatResult.rewards.wealth });
+      }
+    }
+    
+    return combatResult;
   }
 }
 

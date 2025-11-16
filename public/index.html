@@ -39,14 +39,29 @@
         <!-- Game Screen -->
         <div id="game-screen" class="screen">
             <div class="game-container">
-                <!-- Header -->
-                <header class="game-header">
-                    <h1>Three Tribes Chronicle</h1>
-                    <div class="header-info">
-                        <span>Day <span id="current-day">1</span></span>
-                        <span id="stamina-display">⚡ <span id="stamina">5</span>/<span id="max-stamina">5</span></span>
+                <!-- Compact Status Bar (replaces header) -->
+                <div class="status-bar">
+                    <div class="status-group">
+                        <span class="status-label">Day</span>
+                        <span class="status-value" id="current-day">1</span>
                     </div>
-                </header>
+                    <div class="status-group">
+                        <span class="status-icon">⚡</span>
+                        <span class="status-value" id="stamina">5</span>
+                        <span class="status-separator">/</span>
+                        <span class="status-value" id="max-stamina">5</span>
+                    </div>
+                    <div class="status-group">
+                        <span class="status-icon">❤️</span>
+                        <span class="status-value" id="health">100</span>
+                        <span class="status-separator">/</span>
+                        <span class="status-value" id="max-health">100</span>
+                    </div>
+                    <div class="status-group status-actions">
+                        <a href="npc-manager.html" class="status-link" title="Manage NPCs">👥</a>
+                        <a href="game-master.html" class="status-link" title="Game Master">🎮</a>
+                    </div>
+                </div>
 
                 <div class="game-layout">
                     <!-- Left Panel - Character & Tribe -->
@@ -63,6 +78,12 @@
                             <div id="tribe-status"></div>
                         </section>
 
+                        <!-- World State -->
+                        <section class="card">
+                            <h2>🌍 World State</h2>
+                            <div id="world-status"></div>
+                        </section>
+
                         <!-- NPCs -->
                         <section class="card">
                             <h2>👥 Tribal Members</h2>
@@ -72,6 +93,19 @@
 
                     <!-- Main Content -->
                     <main class="main-content">
+                        <!-- World Map -->
+                        <section class="card map-card">
+                            <h2>🗺️ World Map</h2>
+                            <div class="map-wrapper">
+                                <div class="map-canvas" id="map-canvas">
+                                    <!-- Map terrain and NPCs will be rendered here -->
+                                </div>
+                            </div>
+                            <div class="map-controls">
+                                <button class="btn btn-secondary" id="refresh-map-btn">🔄 Refresh Map</button>
+                            </div>
+                        </section>
+
                         <!-- Actions -->
                         <section class="card actions-card">
                             <h2>📋 Actions</h2>
@@ -91,10 +125,15 @@
                                     <span class="label">Trade</span>
                                     <span class="cost">1 ⚡</span>
                                 </button>
-                                <button class="action-btn" data-action="visit">
-                                    <span class="icon">👥</span>
-                                    <span class="label">Visit NPC</span>
-                                    <span class="cost">1 ⚡</span>
+                                <button class="action-btn" data-action="hunt">
+                                    <span class="icon">🏹</span>
+                                    <span class="label">Hunt</span>
+                                    <span class="cost">2 ⚡</span>
+                                </button>
+                                <button class="action-btn" data-action="explore">
+                                    <span class="icon">🗺️</span>
+                                    <span class="label">Explore</span>
+                                    <span class="cost">2 ⚡</span>
                                 </button>
                             </div>
                             <div class="action-buttons">
@@ -119,6 +158,109 @@
                 <h2>Choose an NPC to Visit</h2>
                 <div id="npc-selection"></div>
                 <button class="btn btn-secondary" id="close-npc-modal">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Combat Window -->
+        <div id="combat-window" class="combat-window">
+            <div class="combat-container">
+                <div class="combat-header">
+                    <h2>⚔️ Combat Encounter</h2>
+                </div>
+                
+                <div class="combat-battlefield">
+                    <!-- Enemy Side -->
+                    <div class="combat-side enemy-side">
+                        <div class="combat-character-card enemy-card">
+                            <div class="character-avatar enemy-avatar">
+                                <span id="enemy-emoji">🐺</span>
+                            </div>
+                            <div class="character-info">
+                                <h3 id="enemy-name">Wild Animal</h3>
+                                <div class="level-badge" id="enemy-level">Lv. 1</div>
+                            </div>
+                            <div class="health-bar-container">
+                                <div class="health-bar-label">
+                                    <span>Health</span>
+                                    <span id="enemy-health-text">100/100</span>
+                                </div>
+                                <div class="health-bar">
+                                    <div class="health-bar-fill enemy-health" id="enemy-health-bar" style="width: 100%"></div>
+                                </div>
+                            </div>
+                            <div class="stat-grid" id="enemy-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">STR</span>
+                                    <span class="stat-value" id="enemy-str">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">DEX</span>
+                                    <span class="stat-value" id="enemy-dex">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">DMG</span>
+                                    <span class="stat-value" id="enemy-damage">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- VS Divider -->
+                    <div class="combat-vs">
+                        <div class="vs-line"></div>
+                        <div class="vs-text">VS</div>
+                        <div class="vs-line"></div>
+                    </div>
+                    
+                    <!-- Player Side -->
+                    <div class="combat-side player-side">
+                        <div class="combat-character-card player-card">
+                            <div class="character-avatar player-avatar">
+                                <span>⚔️</span>
+                            </div>
+                            <div class="character-info">
+                                <h3 id="player-combat-name">Player</h3>
+                                <div class="level-badge" id="player-combat-level">Lv. 1</div>
+                            </div>
+                            <div class="health-bar-container">
+                                <div class="health-bar-label">
+                                    <span>Health</span>
+                                    <span id="player-health-text">100/100</span>
+                                </div>
+                                <div class="health-bar">
+                                    <div class="health-bar-fill player-health" id="player-health-bar" style="width: 100%"></div>
+                                </div>
+                            </div>
+                            <div class="stat-grid" id="player-combat-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">STR</span>
+                                    <span class="stat-value" id="player-str">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">DEX</span>
+                                    <span class="stat-value" id="player-dex">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">LCK</span>
+                                    <span class="stat-value" id="player-luck">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="combat-actions-panel">
+                    <button class="combat-btn combat-btn-fight" id="fight-btn">
+                        <span class="btn-icon">⚔️</span>
+                        <span class="btn-text">Fight</span>
+                    </button>
+                    <button class="combat-btn combat-btn-flee" id="flee-btn">
+                        <span class="btn-icon">🏃</span>
+                        <span class="btn-text">Flee</span>
+                    </button>
+                </div>
+                
+                <div class="combat-message" id="combat-message"></div>
             </div>
         </div>
     </div>

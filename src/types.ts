@@ -34,6 +34,8 @@ export interface Player {
   inventory: PlayerInventory;
   stamina: number;
   maxStamina: number;
+  health: number;
+  maxHealth: number;
   relationships: Record<string, number>;
   flags: Record<string, boolean>;
 }
@@ -79,6 +81,12 @@ export interface NPC {
   xp: number;
   stats: NPCStats;
   flags: Record<string, boolean>;
+  location?: {
+    x: number;
+    y: number;
+    map: string;
+  };
+  encountered?: boolean;
 }
 
 export interface Event {
@@ -116,7 +124,50 @@ export interface ActionResult {
   };
   event?: Event;
   npcEvent?: Event;
+  encounter?: {
+    success: boolean;
+    message: string;
+    rewards?: any;
+    effects?: any;
+  };
+  exploreEncounter?: {
+    animal: WildAnimal;
+    requiresDecision: boolean;
+  };
+  combatResult?: CombatResult;
 }
 
 export type ActionType = "farm" | "gather" | "trade" | "visit" | "hunt" | "explore";
+
+export interface WildAnimal {
+  id: string;
+  name: string;
+  level: number;
+  stats: {
+    str: number;
+    dex: number;
+    health: number;
+    maxHealth: number;
+  };
+  rewards: {
+    xp?: number;
+    food?: number;
+    materials?: number;
+    wealth?: number;
+  };
+  damage: number; // Base damage the animal can deal
+}
+
+export interface CombatResult {
+  victory: boolean;
+  damageTaken: number;
+  damageDealt: number;
+  rewards?: {
+    xp?: number;
+    food?: number;
+    materials?: number;
+    wealth?: number;
+  };
+  message: string;
+}
 

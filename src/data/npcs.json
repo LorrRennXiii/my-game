@@ -19,7 +19,13 @@
     "flags": {
       "met": false,
       "quest_given": false
-    }
+    },
+    "location": {
+      "x": 320,
+      "y": 180,
+      "map": "stonefang_village"
+    },
+    "encountered": false
   },
   {
     "id": "npc_02",
@@ -41,7 +47,13 @@
     "flags": {
       "met": false,
       "quest_given": false
-    }
+    },
+    "location": {
+      "x": 450,
+      "y": 250,
+      "map": "stonefang_village"
+    },
+    "encountered": false
   },
   {
     "id": "npc_03",
@@ -63,7 +75,13 @@
     "flags": {
       "met": false,
       "quest_given": false
-    }
+    },
+    "location": {
+      "x": 200,
+      "y": 120,
+      "map": "stonefang_village"
+    },
+    "encountered": false
   }
 ]
 
