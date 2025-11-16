@@ -43,14 +43,46 @@ const dbManager = new DatabaseManager()
 import { SaveService } from './core/saveService.js'
 const saveService = new SaveService()
 
+// Load NPCs and config from database on startup (async, will be used when needed)
+async function loadDatabaseData() {
+  try {
+    const npcs = await dbManager.loadNPCs()
+    if (npcs && npcs.length > 0) {
+      console.log(`✅ Loaded ${npcs.length} NPCs from database`)
+      baseNPCs = npcs // Update baseNPCs with database NPCs
+    } else {
+      console.log('ℹ️ No NPCs in database, using base NPCs from file')
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load NPCs from database on startup:', error instanceof Error ? error.message : String(error))
+  }
+  
+  try {
+    const config = await dbManager.loadGameConfig('default')
+    if (config) {
+      console.log('✅ Loaded game config from database')
+    } else {
+      console.log('ℹ️ No game config in database, will use defaults')
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load game config from database on startup:', error instanceof Error ? error.message : String(error))
+  }
+}
+
 // Initialize database on startup (with retry logic for Docker)
-dbManager.initialize().catch((error) => {
-  console.error('⚠️ Failed to initialize database. Continuing without database storage:', error.message)
-  console.log('💡 To enable database storage:')
-  console.log('   - Set DATABASE_URL or DB_* environment variables')
-  console.log('   - Or use Docker Compose: docker-compose up')
-  console.log('   - The app will continue with localStorage fallback')
-})
+dbManager.initialize()
+  .then(() => {
+    // Load NPCs and config from database after initialization
+    return loadDatabaseData()
+  })
+  .catch((error) => {
+    console.error('⚠️ Failed to initialize database. Continuing without database storage:', error.message)
+    console.log('💡 To enable database storage:')
+    console.log('   - Set DATABASE_URL or DB_* environment variables')
+    console.log('   - Default: postgresql://postgres:postgres@localhost:5432/three_tribes_chronicle')
+    console.log('   - Run: npm run seed-db (to populate initial data)')
+    console.log('   - The app will continue with file-based NPCs')
+  })
 
 // Initialize save service
 saveService.initialize().catch((error) => {
@@ -58,27 +90,44 @@ saveService.initialize().catch((error) => {
   console.log('💡 Save service will fallback to file-based saves')
 })
 
-// Function to get NPCs (with permanent overrides from request)
-function getNPCsForGame(permanentNPCs?: NPC[]): NPC[] {
-  if (permanentNPCs && permanentNPCs.length > 0) {
-    return permanentNPCs
+// Function to get NPCs from database (fallback to baseNPCs if database unavailable)
+async function getNPCsForGame(): Promise<NPC[]> {
+  try {
+    const npcs = await dbManager.loadNPCs()
+    if (npcs && npcs.length > 0) {
+      return npcs
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load NPCs from database, using base NPCs:', error instanceof Error ? error.message : String(error))
   }
   return baseNPCs
+}
+
+// Function to get game config from database (fallback to default if database unavailable)
+async function getGameConfigForGame(): Promise<any> {
+  try {
+    const config = await dbManager.loadGameConfig('default')
+    if (config) {
+      return config
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load game config from database, using default:', error instanceof Error ? error.message : String(error))
+  }
+  return undefined // Will use default config
 }
 
 // API Routes
 
 // Create new game session
-app.post('/api/game/new', (req, res) => {
+app.post('/api/game/new', async (req, res) => {
   try {
     const { name, tribe } = req.body
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-    // Load permanent config and NPCs from request (sent by frontend)
-    const permanentConfig = req.body.permanentConfig || undefined
-    const permanentNPCs = req.body.permanentNPCs || undefined
-    const gameNPCs = getNPCsForGame(permanentNPCs)
-    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, permanentConfig)
+    // Load NPCs and config from database (not from request)
+    const gameNPCs = await getNPCsForGame()
+    const gameConfig = await getGameConfigForGame()
+    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
     if (name) game.setPlayerName(name)
     if (tribe) game.setPlayerTribe(tribe)
 
@@ -365,21 +414,21 @@ app.post('/api/saves/:userId/slot/:slotNumber', async (req, res) => {
 app.post('/api/saves/:userId/slot/:slotNumber/load', async (req, res) => {
   try {
     const { userId, slotNumber } = req.params
-    const { permanentConfig, permanentNPCs } = req.body
 
     const saveData = await saveService.loadGame(userId, parseInt(slotNumber))
     const metadata = await saveService.getSaveMetadata(userId, parseInt(slotNumber))
 
-    // Create new session
+    // Create new session - load NPCs and config from database
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    const gameNPCs = getNPCsForGame(permanentNPCs)
-    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, permanentConfig)
+    const gameNPCs = await getNPCsForGame()
+    const gameConfig = await getGameConfigForGame()
+    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
     
     await game.loadGameFromData(saveData)
     
-    // Apply permanent config after loading
-    if (permanentConfig) {
-      game.updateGameConfig(permanentConfig)
+    // Apply database config after loading (overrides saved game config)
+    if (gameConfig) {
+      game.updateGameConfig(gameConfig)
     }
     
     game.startDay()
@@ -470,7 +519,7 @@ app.post('/api/saves/:userId/playtime', async (req, res) => {
 // Load game
 app.post('/api/game/load', async (req, res) => {
   try {
-    const { filepath, permanentConfig, permanentNPCs } = req.body
+    const { filepath } = req.body
     
     if (!filepath) {
       return res.status(400).json({ error: 'Filepath is required' })
@@ -478,14 +527,15 @@ app.post('/api/game/load', async (req, res) => {
     
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
-    // Load permanent config and NPCs if provided (overrides saved config)
-    const gameNPCs = getNPCsForGame(permanentNPCs)
-    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, permanentConfig)
+    // Load NPCs and config from database (not from request)
+    const gameNPCs = await getNPCsForGame()
+    const gameConfig = await getGameConfigForGame()
+    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
     await game.loadGame(filepath)
     
-    // Apply permanent config after loading (overrides saved game config)
-    if (permanentConfig) {
-      game.updateGameConfig(permanentConfig)
+    // Apply database config after loading (overrides saved game config)
+    if (gameConfig) {
+      game.updateGameConfig(gameConfig)
     }
     
     game.startDay()
@@ -515,9 +565,10 @@ app.post('/api/game/load', async (req, res) => {
 // NPC Management API
 
 // Get all NPCs (base data)
-app.get('/api/npcs', (req, res) => {
+app.get('/api/npcs', async (req, res) => {
   try {
-    res.json({ npcs: baseNPCs })
+    const npcs = await getNPCsForGame()
+    res.json({ npcs })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get NPCs' })
   }

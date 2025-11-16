@@ -11,6 +11,7 @@
     "watch": "tsc --watch",
     "web": "npm run build && npm start",
     "seed": "npm run build && node dist/scripts/seed-database.js",
+    "seed-db": "npm run build && node dist/scripts/seed-database.js",
     "check-db": "./scripts/check-db.sh",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",

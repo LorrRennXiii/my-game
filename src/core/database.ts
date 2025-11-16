@@ -7,17 +7,41 @@ export class DatabaseManager {
 
   constructor() {
     // Get database connection from environment variables
-    const connectionString = process.env.DATABASE_URL ||
-      `postgresql://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'three_tribes_chronicle'}`
+    const dbUser = process.env.DB_USER || 'postgres'
+    const dbPassword = process.env.DB_PASSWORD || 'postgres'
+    const dbHost = process.env.DB_HOST || '127.0.0.1'
+    const dbPort = parseInt(process.env.DB_PORT || '5432')
+    const dbName = process.env.DB_NAME || 'three_tribes_chronicle'
 
-    this.pool = new Pool({
-      connectionString,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      // Connection pool settings
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    })
+    // Log connection info (mask password)
+    const maskedConnectionString = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.replace(/:([^:@]+)@/, ':***@')
+      : `postgresql://${dbUser}:***@${dbHost}:${dbPort}/${dbName}`
+    console.log(`🔌 Database connection: ${maskedConnectionString}`)
+
+    // Use DATABASE_URL if provided, otherwise use individual parameters
+    // Individual parameters help avoid IPv6 resolution issues
+    if (process.env.DATABASE_URL) {
+      this.pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+      })
+    } else {
+      this.pool = new Pool({
+        host: dbHost,
+        port: dbPort,
+        user: dbUser,
+        password: dbPassword,
+        database: dbName,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+      })
+    }
 
     // Handle pool errors
     this.pool.on('error', (err) => {
@@ -31,8 +55,12 @@ export class DatabaseManager {
 
     while (retries > 0) {
       try {
+        // First, test basic connection
         const client = await this.pool.connect()
         try {
+          // Test connection with a simple query
+          await client.query('SELECT NOW()')
+
           // Create tables if they don't exist
           await client.query(`
             CREATE TABLE IF NOT EXISTS npcs (
@@ -75,20 +103,47 @@ export class DatabaseManager {
         }
       } catch (error) {
         retries--
+        const errorMsg = error instanceof Error ? error.message : String(error)
+
         if (retries === 0) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
           console.error('\n❌ Error initializing database after retries:')
           console.error(`   ${errorMsg}\n`)
-          console.error('💡 Troubleshooting tips:')
-          console.error('   1. Make sure PostgreSQL is running')
-          console.error('   2. Check your database connection settings:')
-          console.error('      - DATABASE_URL or DB_* environment variables')
-          console.error('      - Default: postgresql://postgres:postgres@localhost:5432/three_tribes_chronicle')
-          console.error('   3. If using Docker: docker-compose up -d postgres')
-          console.error('   4. Verify database exists: createdb three_tribes_chronicle')
+
+          // Provide specific error messages
+          if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('connect')) {
+            console.error('💡 Connection Refused - PostgreSQL is not running or not accessible')
+            console.error('   Solutions:')
+            console.error('   1. Start PostgreSQL:')
+            console.error('      - macOS: brew services start postgresql@15')
+            console.error('      - Linux: sudo systemctl start postgresql')
+            console.error('      - Docker: docker-compose up -d postgres')
+            console.error('   2. Check if PostgreSQL is running: pg_isready')
+            console.error('   3. Verify host and port in connection string')
+          } else if (errorMsg.includes('authentication') || errorMsg.includes('password')) {
+            console.error('💡 Authentication Failed - Wrong username or password')
+            console.error('   Solutions:')
+            console.error('   1. Check DB_USER and DB_PASSWORD environment variables')
+            console.error('   2. Verify DATABASE_URL connection string')
+            console.error('   3. Test connection: psql -U postgres -h localhost')
+          } else if (errorMsg.includes('does not exist') || errorMsg.includes('database')) {
+            console.error('💡 Database Not Found - Database does not exist')
+            console.error('   Solutions:')
+            console.error('   1. Create database: createdb three_tribes_chronicle')
+            console.error('   2. Or set DB_NAME environment variable')
+            console.error('   3. Connect to PostgreSQL and run: CREATE DATABASE three_tribes_chronicle;')
+          } else {
+            console.error('💡 Troubleshooting tips:')
+            console.error('   1. Make sure PostgreSQL is running')
+            console.error('   2. Check your database connection settings:')
+            console.error('      - DATABASE_URL or DB_* environment variables')
+            console.error('      - Default: postgresql://postgres:postgres@localhost:5432/three_tribes_chronicle')
+            console.error('   3. If using Docker: docker-compose up -d postgres')
+            console.error('   4. Verify database exists: createdb three_tribes_chronicle')
+          }
           throw error
         }
         console.log(`⚠️ Database connection failed. Retrying in ${delay / 1000}s... (${retries} retries left)`)
+        console.log(`   Error: ${errorMsg}`)
         await new Promise(resolve => setTimeout(resolve, delay))
         delay *= 1.5 // Exponential backoff
       }
@@ -115,6 +170,25 @@ export class DatabaseManager {
     } catch (error) {
       await client.query('ROLLBACK')
       throw new Error(`Failed to save NPCs: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      client.release()
+    }
+  }
+
+  async tableExists(tableName: string): Promise<boolean> {
+    const client = await this.pool.connect()
+    try {
+      const result = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = $1
+        )`,
+        [tableName]
+      )
+      return result.rows[0].exists
+    } catch (error) {
+      throw new Error(`Failed to check if table exists: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       client.release()
     }

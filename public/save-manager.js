@@ -107,14 +107,11 @@ async function loadFromSlot(slotNumber) {
   }
 
   try {
-    // Load permanent config and NPCs
-    const permanentConfig = getPermanentConfigFn ? getPermanentConfigFn() : null
-    const permanentNPCs = getPermanentNPCsFn ? getPermanentNPCsFn() : null
-
+    // NPCs and config are now loaded from database on server side
     const response = await fetch(`/api/saves/${currentUserId}/slot/${slotNumber}/load`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ permanentConfig, permanentNPCs })
+      body: JSON.stringify({})
     })
 
     if (!response.ok) {

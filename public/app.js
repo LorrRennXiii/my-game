@@ -149,15 +149,12 @@ async function startNewGame() {
   const name = document.getElementById("player-name").value.trim() || "Aro";
   const tribe = document.getElementById("tribe-select").value;
 
-  // Load permanent config and NPCs
-  const permanentConfig = getPermanentConfig();
-  const permanentNPCs = getPermanentNPCs();
-
+  // NPCs and config are now loaded from database on server side
   try {
     const response = await fetch(`${API_BASE}/api/game/new`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, tribe, permanentConfig, permanentNPCs }),
+      body: JSON.stringify({ name, tribe }),
     });
 
     if (!response.ok) throw new Error("Failed to create game");
@@ -539,14 +536,11 @@ async function showLoadScreen() {
 
 async function loadGame(filepath) {
   try {
-    // Load permanent config and NPCs
-    const permanentConfig = getPermanentConfig();
-    const permanentNPCs = getPermanentNPCs();
-
+    // NPCs and config are now loaded from database on server side
     const response = await fetch(`${API_BASE}/api/game/load`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filepath, permanentConfig, permanentNPCs }),
+      body: JSON.stringify({ filepath }),
     });
 
     const data = await response.json();
@@ -1172,30 +1166,14 @@ function showCombatModal(animal) {
   combatWindow.classList.add("active");
 }
 
-// Helper function to get permanent config from localStorage
+// NPCs and game config are now loaded from database on the server side
+// These helper functions are no longer needed but kept for backward compatibility
 function getPermanentConfig() {
-  try {
-    const savedConfig = localStorage.getItem("gameMasterConfig");
-    if (savedConfig) {
-      return JSON.parse(savedConfig);
-    }
-  } catch (error) {
-    console.error("Error loading permanent config:", error);
-  }
-  return null;
+  return null; // Config is loaded from database on server
 }
 
-// Helper function to get permanent NPCs from localStorage
 function getPermanentNPCs() {
-  try {
-    const savedNPCs = localStorage.getItem("permanentNPCs");
-    if (savedNPCs) {
-      return JSON.parse(savedNPCs);
-    }
-  } catch (error) {
-    console.error("Error loading permanent NPCs:", error);
-  }
-  return null;
+  return null; // NPCs are loaded from database on server
 }
 
 // Inventory Management
