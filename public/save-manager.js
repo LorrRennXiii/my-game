@@ -20,7 +20,7 @@ let updateUIFn = null
 let showGameScreenFn = null
 let getPermanentConfigFn = null
 let getPermanentNPCsFn = null
-let sessionIdRef = null
+let userIdRef = null
 let gameStateRef = null
 
 /**
@@ -28,7 +28,7 @@ let gameStateRef = null
  */
 function initializeSaveManager(userId, refs = {}) {
   currentUserId = userId
-  sessionIdRef = refs.sessionId || null
+  userIdRef = refs.userId || null
   gameStateRef = refs.gameState || null
   addMessageFn = refs.addMessage || ((msg, type) => console.log(`[${type}] ${msg}`))
   updateUIFn = refs.updateUI || (() => {})
@@ -61,8 +61,8 @@ async function loadSaveSlots() {
  * Save game to a specific slot
  */
 async function saveToSlot(slotNumber, saveName = null, isAutoSave = false) {
-  const activeSessionId = sessionIdRef || (typeof sessionId !== 'undefined' ? sessionId : null)
-  if (!currentUserId || !activeSessionId) {
+  const activeUserId = userIdRef || (typeof userId !== 'undefined' ? userId : null) || currentUserId
+  if (!currentUserId || !activeUserId) {
     if (addMessageFn) addMessageFn('No active game session', 'error')
     return false
   }
@@ -121,14 +121,15 @@ async function loadFromSlot(slotNumber) {
 
     const data = await response.json()
     
-    // Update session (update both local and global if available)
-    if (sessionIdRef !== null) {
-      sessionIdRef = data.sessionId
+    // Update userId (update both local and global if available)
+    const newUserId = data.userId || currentUserId
+    if (userIdRef !== null) {
+      userIdRef = newUserId
     }
-    if (typeof sessionId !== 'undefined') {
-      sessionId = data.sessionId
+    if (typeof userId !== 'undefined') {
+      userId = newUserId
     }
-    localStorage.setItem('gameSessionId', data.sessionId)
+    localStorage.setItem('gameUserId', newUserId)
     
     // Update game state (update both local and global if available)
     const newGameState = {
@@ -154,9 +155,9 @@ async function loadFromSlot(slotNumber) {
     if (showGameScreenFn) showGameScreenFn()
     if (addMessageFn) addMessageFn(`✅ Loaded from Slot ${slotNumber}`, 'success')
     
-    // Re-initialize save manager with new session
-    initializeSaveManager(data.sessionId, {
-      sessionId: sessionIdRef || sessionId,
+    // Re-initialize save manager with new userId
+    initializeSaveManager(newUserId, {
+      userId: userIdRef || userId,
       gameState: gameStateRef || gameState,
       addMessage: addMessageFn,
       updateUI: updateUIFn,
@@ -203,8 +204,8 @@ async function deleteSaveSlot(slotNumber) {
  * Silent save - no user notification
  */
 async function autoSave() {
-  const activeSessionId = sessionIdRef || (typeof sessionId !== 'undefined' ? sessionId : null)
-  if (!currentUserId || !activeSessionId) return
+  const activeUserId = userIdRef || (typeof userId !== 'undefined' ? userId : null) || currentUserId
+  if (!currentUserId || !activeUserId) return
 
   try {
     // Find first empty slot or use slot 1
@@ -353,14 +354,17 @@ function renderSaveSlots() {
 let autoSaveInterval = null
 
 function startAutoSave() {
-  // Auto-save every 5 minutes
+  // Note: Backend already auto-saves to active_games table after every action
+  // This interval-based auto-save is kept as a backup for save slots only
+  // Reduced frequency to 15 minutes to avoid excessive database writes
   if (autoSaveInterval) clearInterval(autoSaveInterval)
   
   autoSaveInterval = setInterval(() => {
-    if (sessionId && currentUserId) {
+    if (currentUserId) {
+      // Only auto-save to save slots as backup (backend handles active game state)
       autoSave()
     }
-  }, 5 * 60 * 1000) // 5 minutes
+  }, 15 * 60 * 1000) // 15 minutes (reduced from 5 to avoid redundancy)
 }
 
 function stopAutoSave() {

@@ -1,12 +1,12 @@
 // Map View
-let currentSessionId = null;
+let currentUserId = null;
 let gameState = null;
 let npcMarkers = [];
 
 // Get session ID from localStorage
 window.addEventListener('DOMContentLoaded', () => {
-    currentSessionId = localStorage.getItem('gameSessionId');
-    if (currentSessionId) {
+    currentUserId = localStorage.getItem('gameUserId');
+    if (currentUserId) {
         loadMapData();
     } else {
         showMessage('No active game session. Please start a game first.', 'error');
@@ -14,10 +14,10 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadMapData() {
-    if (!currentSessionId) return;
+    if (!currentUserId) return;
 
     try {
-        const response = await fetch(`/api/game/${currentSessionId}`);
+        const response = await fetch(`/api/game/${currentUserId}`);
         if (!response.ok) {
             throw new Error('Failed to load game data');
         }
@@ -98,10 +98,10 @@ function getRoleEmoji(role) {
 }
 
 async function interactWithNPC(npcId) {
-    if (!currentSessionId) return;
+    if (!currentUserId) return;
 
     try {
-        const response = await fetch(`/api/game/${currentSessionId}/action`, {
+        const response = await fetch(`/api/game/${currentUserId}/action`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

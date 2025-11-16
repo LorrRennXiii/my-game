@@ -82,6 +82,18 @@ export class DatabaseManager {
             )
           `)
 
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS active_games (
+              id SERIAL PRIMARY KEY,
+              user_id VARCHAR(255) UNIQUE NOT NULL,
+              game_data JSONB NOT NULL,
+              playtime INTEGER NOT NULL DEFAULT 0,
+              last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+          `)
+
           // Create indexes for better performance
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_npc_id ON npcs(npc_id)
@@ -89,6 +101,14 @@ export class DatabaseManager {
 
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_config_key ON game_configs(config_key)
+          `)
+
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_user_id_active ON active_games(user_id)
+          `)
+
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_last_activity ON active_games(last_activity DESC)
           `)
 
           // Initialize save service tables
@@ -235,6 +255,92 @@ export class DatabaseManager {
       return result.rows[0].config_data as GameConfig
     } catch (error) {
       throw new Error(`Failed to load game config: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Save active game state for a user
+   */
+  async saveActiveGame(userId: string, gameData: any, playtime: number = 0): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query(
+        `INSERT INTO active_games (user_id, game_data, playtime, last_activity, updated_at)
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id)
+         DO UPDATE SET
+           game_data = EXCLUDED.game_data,
+           playtime = EXCLUDED.playtime,
+           last_activity = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP`,
+        [userId, JSON.stringify(gameData), playtime]
+      )
+    } catch (error) {
+      throw new Error(`Failed to save active game: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Load active game state for a user
+   */
+  async loadActiveGame(userId: string): Promise<{ gameData: any; playtime: number } | null> {
+    const client = await this.pool.connect()
+    try {
+      const result = await client.query(
+        `SELECT game_data, playtime FROM active_games WHERE user_id = $1`,
+        [userId]
+      )
+
+      if (result.rows.length === 0) {
+        return null
+      }
+
+      return {
+        gameData: result.rows[0].game_data,
+        playtime: result.rows[0].playtime
+      }
+    } catch (error) {
+      throw new Error(`Failed to load active game: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Delete active game for a user
+   */
+  async deleteActiveGame(userId: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query(
+        `DELETE FROM active_games WHERE user_id = $1`,
+        [userId]
+      )
+    } catch (error) {
+      throw new Error(`Failed to delete active game: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Update playtime for active game
+   */
+  async updateActiveGamePlaytime(userId: string, playtime: number): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query(
+        `UPDATE active_games 
+         SET playtime = $2, last_activity = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1`,
+        [userId, playtime]
+      )
+    } catch (error) {
+      throw new Error(`Failed to update playtime: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       client.release()
     }

@@ -1,7 +1,18 @@
 // Game State
-let sessionId = null;
+let userId = null;
 let gameState = null;
 let currentCombatAnimal = null; // Track active combat encounter
+
+// Generate or retrieve userId
+function getOrCreateUserId() {
+  let id = localStorage.getItem("gameUserId");
+  if (!id) {
+    // Generate a unique user ID
+    id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem("gameUserId", id);
+  }
+  return id;
+}
 
 // API Base URL
 const API_BASE = "";
@@ -25,15 +36,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Check for saved session and show appropriate screen
   checkForSavedSession();
 
-  // Auto-save on page unload
-  window.addEventListener("beforeunload", () => {
-    if (typeof saveManager !== "undefined" && saveManager && sessionId) {
-      // Use sendBeacon for reliable save on page close
-      saveManager.autoSave().catch(() => {
-        // Ignore errors on unload
-      });
-    }
-  });
+  // Initialize userId
+  userId = getOrCreateUserId();
+
+  // Note: Backend already saves to active_games table after every action
+  // No need to auto-save on page unload - game state is already persisted
+  // The active_games table is the primary persistence mechanism
 });
 
 function setupEventListeners() {
@@ -122,52 +130,53 @@ function setupEventListeners() {
 }
 
 function checkForSavedSession() {
-  const saved = localStorage.getItem("gameSessionId");
-  if (saved) {
-    sessionId = saved;
-    // Initialize save manager
-    if (typeof saveManager !== "undefined") {
-      saveManager.initialize(sessionId, {
-        sessionId: sessionId,
-        gameState: gameState,
-        addMessage: addMessage,
-        updateUI: updateUI,
-        showGameScreen: showGameScreen,
-        getPermanentConfig: getPermanentConfig,
-        getPermanentNPCs: getPermanentNPCs,
-      });
-      saveManager.startAutoSave();
-    }
-    loadGameState();
-  } else {
-    // No saved session, show start screen
-    showStartScreen();
+  userId = getOrCreateUserId();
+  // Initialize save manager (for manual saves to slots)
+  // Note: Backend auto-saves to active_games table, so interval auto-save is optional
+  if (typeof saveManager !== "undefined") {
+    saveManager.initialize(userId, {
+      userId: userId,
+      gameState: gameState,
+      addMessage: addMessage,
+      updateUI: updateUI,
+      showGameScreen: showGameScreen,
+      getPermanentConfig: getPermanentConfig,
+      getPermanentNPCs: getPermanentNPCs,
+    });
+    // Optional: Start interval-based backup saves (reduced frequency)
+    // saveManager.startAutoSave();
   }
+  loadGameState();
 }
 
 async function startNewGame() {
   const name = document.getElementById("player-name").value.trim() || "Aro";
   const tribe = document.getElementById("tribe-select").value;
 
+  // Ensure userId exists
+  userId = getOrCreateUserId();
+
   // NPCs and config are now loaded from database on server side
   try {
     const response = await fetch(`${API_BASE}/api/game/new`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, tribe }),
+      body: JSON.stringify({ name, tribe, userId }),
     });
 
     if (!response.ok) throw new Error("Failed to create game");
 
     const data = await response.json();
-    sessionId = data.sessionId;
-    localStorage.setItem("gameSessionId", sessionId);
+    userId = data.userId || getOrCreateUserId();
+    localStorage.setItem("gameUserId", userId);
     gameState = data;
 
-    // Initialize save manager with session ID
+    // Initialize save manager with user ID (for manual saves to slots)
+    // Note: Backend auto-saves to active_games table, so interval auto-save is optional
     if (typeof saveManager !== "undefined") {
-      saveManager.initialize(sessionId);
-      saveManager.startAutoSave();
+      saveManager.initialize(userId);
+      // Optional: Start interval-based backup saves (reduced frequency)
+      // saveManager.startAutoSave();
     }
 
     showGameScreen();
@@ -186,17 +195,15 @@ async function startNewGame() {
 }
 
 async function loadGameState() {
-  if (!sessionId) {
-    showStartScreen();
-    return;
+  if (!userId) {
+    userId = getOrCreateUserId();
   }
 
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}`);
+    const response = await fetch(`${API_BASE}/api/game/${userId}`);
     if (!response.ok) {
       if (response.status === 404) {
-        localStorage.removeItem("gameSessionId");
-        sessionId = null;
+        // Game not found, show start screen
         showStartScreen();
         return;
       }
@@ -214,13 +221,15 @@ async function loadGameState() {
 }
 
 async function executeAction(action, npcId = null, combatDecision = null) {
-  if (!sessionId) return;
+  if (!userId) {
+    userId = getOrCreateUserId();
+  }
 
   const actionBtn = document.querySelector(`[data-action="${action}"]`);
   if (actionBtn) actionBtn.disabled = true;
 
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/action`, {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, npcId, combatDecision }),
@@ -417,12 +426,8 @@ async function executeAction(action, npcId = null, combatDecision = null) {
     updateUI();
     updateInventory();
 
-    // Auto-save after action (silent - no message)
-    if (typeof saveManager !== "undefined" && saveManager && sessionId) {
-      saveManager.autoSave().catch((err) => {
-        console.error("Auto-save failed:", err);
-      });
-    }
+    // Note: Backend automatically saves to active_games table after every action
+    // No need for frontend auto-save here - it's redundant
   } catch (error) {
     addMessage("Error: " + error.message, "error");
     // Re-enable buttons on error (unless there's an active encounter)
@@ -441,15 +446,15 @@ async function executeAction(action, npcId = null, combatDecision = null) {
 }
 
 async function endDay() {
-  if (!sessionId) return;
-
-  // Auto-save before ending day
-  if (typeof saveManager !== "undefined" && saveManager) {
-    await saveManager.autoSave();
+  if (!userId) {
+    userId = getOrCreateUserId();
   }
 
+  // Note: Backend automatically saves to active_games table after end-day
+  // No need for frontend auto-save here - it's redundant
+
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/end-day`, {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/end-day`, {
       method: "POST",
     });
 
@@ -498,12 +503,10 @@ async function endDay() {
   }
 }
 
-// Manual save function removed - game now auto-saves all progress
-// Auto-save happens:
-// - Every 5 minutes during gameplay
-// - Before ending each day
-// - After each action (silent save)
-// - On page unload
+// Auto-save system:
+// - Backend automatically saves to active_games table after every action/end-day/equip/etc.
+// - This is the primary persistence mechanism (no frontend auto-save needed)
+// - Manual saves to save slots are still available for named saves
 
 async function showLoadScreen() {
   try {
@@ -550,14 +553,16 @@ async function loadGame(filepath) {
       throw new Error(errorMsg);
     }
 
-    sessionId = data.sessionId;
-    localStorage.setItem("gameSessionId", sessionId);
+    userId = data.userId || getOrCreateUserId();
+    localStorage.setItem("gameUserId", userId);
     gameState = data;
 
-    // Initialize save manager with session ID
+    // Initialize save manager with user ID (for manual saves to slots)
+    // Note: Backend auto-saves to active_games table, so interval auto-save is optional
     if (typeof saveManager !== "undefined") {
-      saveManager.initialize(sessionId);
-      saveManager.startAutoSave();
+      saveManager.initialize(userId);
+      // Optional: Start interval-based backup saves (reduced frequency)
+      // saveManager.startAutoSave();
     }
 
     showGameScreen();
@@ -870,10 +875,12 @@ function getRoleEmoji(role) {
 }
 
 async function interactWithNPCFromMap(npcId) {
-  if (!sessionId) return;
+  if (!userId) {
+    userId = getOrCreateUserId();
+  }
 
   try {
-    const response = await fetch(`/api/game/${sessionId}/action`, {
+    const response = await fetch(`/api/game/${userId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1219,6 +1226,10 @@ function updateEquipmentSlot(slotName, item) {
     slotEl.classList.add(`item-${item.rarity}`);
     itemEl.innerHTML = createItemDisplay(item, true);
     slotEl.title = item.name;
+    slotEl.draggable = true;
+
+    // Setup drag handlers for equipped items
+    setupEquipmentDragHandlers(slotEl, item, slotName);
   } else {
     slotEl.classList.remove("has-item");
     slotEl.classList.remove(
@@ -1230,6 +1241,41 @@ function updateEquipmentSlot(slotName, item) {
     );
     itemEl.innerHTML = "";
     slotEl.title = getSlotLabel(slotName);
+    slotEl.draggable = false;
+  }
+}
+
+function setupEquipmentDragHandlers(slot, item, slotName) {
+  // Remove existing handlers
+  const newSlot = slot.cloneNode(true);
+  slot.parentNode.replaceChild(newSlot, slot);
+
+  const equipmentSlot = document.querySelector(
+    `.equipment-slot[data-slot="${slotName}"]`
+  );
+  const itemEl = document.getElementById(`equipped-${slotName}`);
+
+  // Drag start for equipped items (to unequip by dragging to bag)
+  if (equipmentSlot && itemEl) {
+    equipmentSlot.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData(
+        "text/plain",
+        JSON.stringify({
+          itemId: item.id,
+          slotName: slotName,
+          source: "equipment",
+        })
+      );
+      equipmentSlot.classList.add("dragging");
+    });
+
+    equipmentSlot.addEventListener("dragend", (e) => {
+      equipmentSlot.classList.remove("dragging");
+      document.querySelectorAll(".bag-slot").forEach((s) => {
+        s.classList.remove("drag-over");
+      });
+    });
   }
 }
 
@@ -1253,13 +1299,69 @@ function updateBagGrid(bag) {
       slot.innerHTML = createItemDisplay(item, false);
       slot.dataset.itemId = item.id;
       slot.dataset.itemType = item.type;
+      slot.draggable = true;
 
-      // Add click handler
-      slot.addEventListener("click", () => handleItemClick(item, i));
+      // Add drag handlers
+      setupBagDragHandlers(slot, item, i);
     }
 
     bagGrid.appendChild(slot);
   }
+}
+
+function setupBagDragHandlers(slot, item, bagIndex) {
+  // Drag start
+  slot.addEventListener("dragstart", (e) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(
+      "text/plain",
+      JSON.stringify({
+        itemId: item.id,
+        itemType: item.type,
+        bagIndex: bagIndex,
+        source: "bag",
+      })
+    );
+    slot.classList.add("dragging");
+  });
+
+  // Drag end
+  slot.addEventListener("dragend", (e) => {
+    slot.classList.remove("dragging");
+    // Remove drag-over class from all slots
+    document.querySelectorAll(".equipment-slot, .bag-slot").forEach((s) => {
+      s.classList.remove("drag-over");
+    });
+  });
+}
+
+function setupBagDropHandlers(slot, slotIndex) {
+  // Allow drop on empty bag slots
+  slot.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    slot.classList.add("drag-over");
+  });
+
+  slot.addEventListener("dragleave", (e) => {
+    slot.classList.remove("drag-over");
+  });
+
+  slot.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    slot.classList.remove("drag-over");
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+
+      if (data.source === "equipment" && data.slotName) {
+        // Unequip item (it will go back to bag automatically)
+        await unequipItem(data.slotName);
+      }
+    } catch (error) {
+      console.error("Error handling bag drop:", error);
+    }
+  });
 }
 
 function createItemDisplay(item, isEquipment) {
@@ -1386,20 +1488,19 @@ function getSlotFromItem(item) {
 }
 
 function handleItemClick(item, bagIndex) {
-  // Show context menu or directly equip if it's equipment
-  if (
-    item.type === "weapon" ||
-    item.type === "armor" ||
-    item.type === "accessory"
-  ) {
-    equipItem(item.id);
-  } else if (item.type === "consumable") {
+  // For consumables, allow click to use
+  // For equipment, drag and drop is the primary method, but click can still work
+  if (item.type === "consumable") {
     consumeItem(item.id);
   }
+  // Equipment items are handled via drag and drop
 }
 
 async function equipItem(itemId) {
-  if (!sessionId || !gameState) return;
+  if (!userId || !gameState) {
+    if (!userId) userId = getOrCreateUserId();
+    if (!gameState) return;
+  }
 
   // Determine slot based on item type
   let slot = "";
@@ -1426,7 +1527,7 @@ async function equipItem(itemId) {
   }
 
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/equip`, {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/equip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ itemId, slot }),
@@ -1453,10 +1554,13 @@ async function equipItem(itemId) {
 }
 
 async function unequipItem(slot) {
-  if (!sessionId || !gameState) return;
+  if (!userId || !gameState) {
+    if (!userId) userId = getOrCreateUserId();
+    if (!gameState) return;
+  }
 
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/unequip`, {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/unequip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slot }),
@@ -1483,10 +1587,13 @@ async function unequipItem(slot) {
 }
 
 async function consumeItem(itemId) {
-  if (!sessionId || !gameState) return;
+  if (!userId || !gameState) {
+    if (!userId) userId = getOrCreateUserId();
+    if (!gameState) return;
+  }
 
   try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/consume`, {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/consume`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ itemId }),

@@ -19,11 +19,42 @@ app.use(cors())
 app.use(express.json())
 app.use(express.static(path.join(__dirname, '..', 'public')))
 
-// In-memory game sessions (in production, use Redis or database)
-const gameSessions = new Map<string, GameLoop>()
+// Helper function to load game state from database and create GameLoop instance
+async function loadGameFromDatabase(userId: string): Promise<{ game: GameLoop; playtime: number } | null> {
+  try {
+    const activeGame = await dbManager.loadActiveGame(userId)
+    if (!activeGame) {
+      return null
+    }
 
-// Track playtime for each session
-const sessionPlaytime = new Map<string, { startTime: number; totalPlaytime: number }>()
+    const saveData = activeGame.gameData
+    const gameNPCs = await getNPCsForGame()
+    const gameConfig = await getGameConfigForGame()
+    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
+    await game.loadGameFromData(saveData)
+    
+    // Apply database config after loading (overrides saved game config)
+    if (gameConfig) {
+      game.updateGameConfig(gameConfig)
+    }
+
+    return { game, playtime: activeGame.playtime }
+  } catch (error) {
+    console.error('Error loading game from database:', error)
+    return null
+  }
+}
+
+// Helper function to save game state to database
+async function saveGameToDatabase(userId: string, game: GameLoop, playtime: number = 0): Promise<void> {
+  try {
+    const saveData = game.getSaveData()
+    await dbManager.saveActiveGame(userId, saveData, playtime)
+  } catch (error) {
+    console.error('Error saving game to database:', error)
+    throw error
+  }
+}
 
 function loadJSON<T>(filename: string): T {
   // Go up from dist/server.js to project root, then into src/data
@@ -118,13 +149,16 @@ async function getGameConfigForGame(): Promise<any> {
 
 // API Routes
 
-// Create new game session
+// Create new game
 app.post('/api/game/new', async (req, res) => {
   try {
-    const { name, tribe } = req.body
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const { name, tribe, userId } = req.body
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' })
+    }
 
-    // Load NPCs and config from database (not from request)
+    // Load NPCs and config from database
     const gameNPCs = await getNPCsForGame()
     const gameConfig = await getGameConfigForGame()
     const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
@@ -132,11 +166,13 @@ app.post('/api/game/new', async (req, res) => {
     if (tribe) game.setPlayerTribe(tribe)
 
     game.startDay()
-    gameSessions.set(sessionId, game)
+    
+    // Save to database
+    await saveGameToDatabase(userId, game, 0)
     
     const player = game.getPlayer()
     res.json({
-      sessionId,
+      userId,
       player,
       tribe: game.getTribe(),
       npcs: game.getNPCsByTribe(player.tribe),
@@ -168,15 +204,16 @@ app.get('/api/game/saves', async (req, res) => {
 })
 
 // Get game state
-app.get('/api/game/:sessionId', (req, res) => {
+app.get('/api/game/:userId', async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const game = gameSessions.get(sessionId)
+    const { userId } = req.params
+    const gameState = await loadGameFromDatabase(userId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game } = gameState
     const player = game.getPlayer()
     res.json({
       player,
@@ -184,40 +221,34 @@ app.get('/api/game/:sessionId', (req, res) => {
       npcs: game.getNPCsByTribe(player.tribe),
       worldState: game.getWorldState(),
       day: game.getDay(),
-        stamina: game.getCurrentStamina(),
-        maxStamina: game.getMaxStamina(),
-        health: game.getHealth(),
-        maxHealth: game.getMaxHealth(),
-        bag: game.getBag(),
-        equipment: game.getEquipment()
-      })
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get game state' })
-    }
-  })
+      stamina: game.getCurrentStamina(),
+      maxStamina: game.getMaxStamina(),
+      health: game.getHealth(),
+      maxHealth: game.getMaxHealth(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get game state' })
+  }
+})
 
 // Execute action
-app.post('/api/game/:sessionId/action', (req, res) => {
+app.post('/api/game/:userId/action', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const { action, npcId, combatDecision } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const result = game.executeAction(action, npcId, combatDecision)
     
-    // Update playtime tracking
-    const playtimeData = sessionPlaytime.get(sessionId)
-    if (playtimeData) {
-      const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
-      playtimeData.totalPlaytime += currentSessionTime
-      playtimeData.startTime = Date.now()
-    } else {
-      sessionPlaytime.set(sessionId, { startTime: Date.now(), totalPlaytime: 0 })
-    }
+    // Auto-save after action
+    await saveGameToDatabase(userId, game, playtime)
     
     res.json({
       result,
@@ -239,16 +270,20 @@ app.post('/api/game/:sessionId/action', (req, res) => {
 })
 
 // End day
-app.post('/api/game/:sessionId/end-day', (req, res) => {
+app.post('/api/game/:userId/end-day', async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const game = gameSessions.get(sessionId)
+    const { userId } = req.params
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const growthMessages = game.endDay()
+    
+    // Auto-save after end day
+    await saveGameToDatabase(userId, game, playtime)
     
     res.json({
       growthMessages,
@@ -271,17 +306,22 @@ app.post('/api/game/:sessionId/end-day', (req, res) => {
 })
 
 // Equip item
-app.post('/api/game/:sessionId/equip', (req, res) => {
+app.post('/api/game/:userId/equip', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const { itemId, slot } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const result = game.equipItem(itemId, slot)
+    
+    // Auto-save after equip
+    await saveGameToDatabase(userId, game, playtime)
+    
     res.json({
       result,
       player: game.getPlayer(),
@@ -294,17 +334,22 @@ app.post('/api/game/:sessionId/equip', (req, res) => {
 })
 
 // Unequip item
-app.post('/api/game/:sessionId/unequip', (req, res) => {
+app.post('/api/game/:userId/unequip', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const { slot } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const result = game.unequipItem(slot)
+    
+    // Auto-save after unequip
+    await saveGameToDatabase(userId, game, playtime)
+    
     res.json({
       result,
       player: game.getPlayer(),
@@ -317,17 +362,22 @@ app.post('/api/game/:sessionId/unequip', (req, res) => {
 })
 
 // Consume item
-app.post('/api/game/:sessionId/consume', (req, res) => {
+app.post('/api/game/:userId/consume', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const { itemId } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const result = game.consumeItem(itemId)
+    
+    // Auto-save after consume
+    await saveGameToDatabase(userId, game, playtime)
+    
     res.json({
       result,
       player: game.getPlayer(),
@@ -343,16 +393,16 @@ app.post('/api/game/:sessionId/consume', (req, res) => {
 })
 
 // Save game (legacy file-based - kept for backward compatibility)
-app.post('/api/game/:sessionId/save', async (req, res) => {
+app.post('/api/game/:userId/save', async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const game = gameSessions.get(sessionId)
+    const { userId } = req.params
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
-    const filepath = await game.saveGame()
+    const filepath = await gameState.game.saveGame()
     
     res.json({ success: true, filepath })
   } catch (error) {
@@ -379,15 +429,12 @@ app.post('/api/saves/:userId/slot/:slotNumber', async (req, res) => {
     const { userId, slotNumber } = req.params
     const { saveName, isAutoSave } = req.body
     
-    const game = gameSessions.get(userId)
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
 
-    // Calculate playtime
-    const playtimeData = sessionPlaytime.get(userId) || { startTime: Date.now(), totalPlaytime: 0 }
-    const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
-    const totalPlaytime = playtimeData.totalPlaytime + currentSessionTime
+    const { game, playtime } = gameState
 
     // Get save data from game
     const saveData = game.getSaveData()
@@ -398,11 +445,8 @@ app.post('/api/saves/:userId/slot/:slotNumber', async (req, res) => {
       saveData,
       saveName,
       isAutoSave === true,
-      totalPlaytime
+      playtime
     )
-
-    // Reset session playtime after save
-    sessionPlaytime.set(userId, { startTime: Date.now(), totalPlaytime })
 
     res.json({ success: true, metadata })
   } catch (error) {
@@ -418,8 +462,7 @@ app.post('/api/saves/:userId/slot/:slotNumber/load', async (req, res) => {
     const saveData = await saveService.loadGame(userId, parseInt(slotNumber))
     const metadata = await saveService.getSaveMetadata(userId, parseInt(slotNumber))
 
-    // Create new session - load NPCs and config from database
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    // Load NPCs and config from database
     const gameNPCs = await getNPCsForGame()
     const gameConfig = await getGameConfigForGame()
     const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
@@ -432,21 +475,14 @@ app.post('/api/saves/:userId/slot/:slotNumber/load', async (req, res) => {
     }
     
     game.startDay()
-    gameSessions.set(sessionId, game)
-
-    // Restore playtime tracking
-    if (metadata) {
-      sessionPlaytime.set(sessionId, { 
-        startTime: Date.now(), 
-        totalPlaytime: metadata.playtime 
-      })
-    } else {
-      sessionPlaytime.set(sessionId, { startTime: Date.now(), totalPlaytime: 0 })
-    }
+    
+    // Save to active games table
+    const playtime = metadata?.playtime || 0
+    await saveGameToDatabase(userId, game, playtime)
 
     const player = game.getPlayer()
     res.json({
-      sessionId,
+      userId,
       player,
       tribe: game.getTribe(),
       npcs: game.getNPCsByTribe(player.tribe),
@@ -502,12 +538,9 @@ app.post('/api/saves/:userId/playtime', async (req, res) => {
       await saveService.updatePlaytime(userId, slotNumber, playtime)
     }
 
-    // Also update in-memory tracking
-    const playtimeData = sessionPlaytime.get(userId)
-    if (playtimeData) {
-      const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
-      playtimeData.totalPlaytime += currentSessionTime
-      playtimeData.startTime = Date.now()
+    // Also update active game playtime
+    if (playtime !== undefined) {
+      await dbManager.updateActiveGamePlaytime(userId, playtime)
     }
 
     res.json({ success: true })
@@ -516,18 +549,20 @@ app.post('/api/saves/:userId/playtime', async (req, res) => {
   }
 })
 
-// Load game
+// Load game (legacy file-based - kept for backward compatibility)
 app.post('/api/game/load', async (req, res) => {
   try {
-    const { filepath } = req.body
+    const { filepath, userId } = req.body
     
     if (!filepath) {
       return res.status(400).json({ error: 'Filepath is required' })
     }
     
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' })
+    }
     
-    // Load NPCs and config from database (not from request)
+    // Load NPCs and config from database
     const gameNPCs = await getNPCsForGame()
     const gameConfig = await getGameConfigForGame()
     const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, gameConfig)
@@ -540,11 +575,12 @@ app.post('/api/game/load', async (req, res) => {
     
     game.startDay()
     
-    gameSessions.set(sessionId, game)
+    // Save to active games table
+    await saveGameToDatabase(userId, game, 0)
     
     const player = game.getPlayer()
     res.json({
-      sessionId,
+      userId,
       player,
       tribe: game.getTribe(),
       npcs: game.getNPCsByTribe(player.tribe),
@@ -574,33 +610,34 @@ app.get('/api/npcs', async (req, res) => {
   }
 })
 
-// Get NPCs from a game session
-app.get('/api/npcs/:sessionId', (req, res) => {
+// Get NPCs from a game
+app.get('/api/npcs/:userId', async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const game = gameSessions.get(sessionId)
+    const { userId } = req.params
+    const gameState = await loadGameFromDatabase(userId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
-    res.json({ npcs: game.getNPCs() })
+    res.json({ npcs: gameState.game.getNPCs() })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get NPCs' })
   }
 })
 
-// Update NPC in a game session
-app.put('/api/npcs/:sessionId/:npcId', (req, res) => {
+// Update NPC in a game
+app.put('/api/npcs/:userId/:npcId', async (req, res) => {
   try {
-    const { sessionId, npcId } = req.params
+    const { userId, npcId } = req.params
     const updates = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const npc = game.getNPC(npcId)
     if (!npc) {
       return res.status(404).json({ error: 'NPC not found' })
@@ -630,6 +667,9 @@ app.put('/api/npcs/:sessionId/:npcId', (req, res) => {
       Object.assign(npc.flags, updates.flags)
     }
     
+    // Auto-save after NPC update
+    await saveGameToDatabase(userId, game, playtime)
+    
     res.json({ success: true, npc })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update NPC' })
@@ -637,18 +677,22 @@ app.put('/api/npcs/:sessionId/:npcId', (req, res) => {
 })
 
 // Manually trigger NPC growth
-app.post('/api/npcs/:sessionId/:npcId/grow', (req, res) => {
+app.post('/api/npcs/:userId/:npcId/grow', async (req, res) => {
   try {
-    const { sessionId, npcId } = req.params
+    const { userId, npcId } = req.params
     const { xpAmount } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     const leveledUp = game.triggerNPCGrowth(npcId, xpAmount || 5)
     const npc = game.getNPC(npcId)
+    
+    // Auto-save after NPC growth
+    await saveGameToDatabase(userId, game, playtime)
     
     res.json({ success: true, leveledUp, npc })
   } catch (error) {
@@ -659,33 +703,37 @@ app.post('/api/npcs/:sessionId/:npcId/grow', (req, res) => {
 // Game Master API
 
 // Get game config
-app.get('/api/game/:sessionId/config', (req, res) => {
+app.get('/api/game/:userId/config', async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const game = gameSessions.get(sessionId)
+    const { userId } = req.params
+    const gameState = await loadGameFromDatabase(userId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
-    res.json({ config: game.getGameConfig() })
+    res.json({ config: gameState.game.getGameConfig() })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get config' })
   }
 })
 
 // Update game config
-app.put('/api/game/:sessionId/config', (req, res) => {
+app.put('/api/game/:userId/config', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const updates = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
+    const { game, playtime } = gameState
     game.updateGameConfig(updates)
+    
+    // Auto-save after config update
+    await saveGameToDatabase(userId, game, playtime)
     
     res.json({ success: true, config: game.getGameConfig() })
   } catch (error) {
@@ -694,21 +742,25 @@ app.put('/api/game/:sessionId/config', (req, res) => {
 })
 
 // Set difficulty preset
-app.post('/api/game/:sessionId/config/difficulty', (req, res) => {
+app.post('/api/game/:userId/config/difficulty', async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const { userId } = req.params
     const { difficulty } = req.body
-    const game = gameSessions.get(sessionId)
     
-    if (!game) {
-      return res.status(404).json({ error: 'Game session not found' })
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
     }
     
     if (!['Easy', 'Normal', 'Hard'].includes(difficulty)) {
       return res.status(400).json({ error: 'Invalid difficulty. Must be Easy, Normal, or Hard' })
     }
     
+    const { game, playtime } = gameState
     game.setDifficulty(difficulty)
+    
+    // Auto-save after difficulty change
+    await saveGameToDatabase(userId, game, playtime)
     
     res.json({ success: true, config: game.getGameConfig() })
   } catch (error) {

@@ -205,7 +205,7 @@ body {
 /* Left Panel */
 .left-panel {
   display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto auto 1fr;
   gap: 10px;
   overflow: hidden;
   min-width: 0;
@@ -235,6 +235,10 @@ body {
   max-height: 200px;
 }
 
+.left-panel .card:nth-child(5) {
+  max-height: 300px;
+}
+
 .left-panel .card:last-child {
   flex: 1;
   min-height: 0;
@@ -257,7 +261,7 @@ body {
   gap: 12px;
   flex: 1;
   min-height: 0;
-  max-height: calc(100% - 150px);
+  max-height: calc(100% - 180px);
 }
 
 /* Cards */
@@ -602,8 +606,8 @@ body {
 /* Messages */
 .messages-card {
   flex: 0 0 auto;
-  max-height: 140px;
-  min-height: 120px;
+  max-height: 180px;
+  min-height: 170px;
   overflow: hidden;
   display: flex;
   flex-direction: column;

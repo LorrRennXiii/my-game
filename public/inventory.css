@@ -1,35 +1,15 @@
-/* Inventory Styles - RPG Style */
-.inventory-card {
-  max-height: 600px;
+/* Equipment Styles */
+.equipment-card {
+  max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
-}
-
-.inventory-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.inventory-subtitle {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 8px 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Equipment Section */
-.equipment-section {
-  border-bottom: 2px solid rgba(139, 92, 246, 0.3);
-  padding-bottom: 12px;
 }
 
 .equipment-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+  padding: 8px 0;
 }
 
 .equipment-slot {
@@ -63,6 +43,12 @@
   box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 
+.equipment-slot.drag-over {
+  border-color: rgba(16, 185, 129, 0.8);
+  background: rgba(16, 185, 129, 0.2);
+  transform: scale(1.05);
+}
+
 .equipment-slot .slot-label {
   font-size: 1.5rem;
   opacity: 0.5;
@@ -90,19 +76,18 @@
   opacity: 1;
 }
 
-/* Bag Section */
-.bag-section {
-  flex: 1;
-  min-height: 0;
+/* Inventory Styles - Grid with Images Only */
+.inventory-card {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .bag-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 6px;
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 4px;
+  padding: 8px 0;
 }
 
 .bag-slot {
@@ -116,13 +101,16 @@
   border: 2px solid rgba(139, 92, 246, 0.3);
   border-radius: 6px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.2s ease;
   overflow: hidden;
   padding: 4px;
+}
+
+.bag-slot:active {
+  cursor: grabbing;
 }
 
 .bag-slot:hover {
@@ -139,44 +127,58 @@
 .bag-slot.empty {
   border-color: rgba(139, 92, 246, 0.2);
   background: rgba(20, 20, 40, 0.4);
+  cursor: default;
 }
 
 .bag-slot.empty:hover {
   border-color: rgba(139, 92, 246, 0.4);
+  transform: none;
 }
 
-/* Item Display */
+.bag-slot.dragging {
+  opacity: 0.5;
+  transform: scale(0.9);
+}
+
+.bag-slot.drag-over {
+  border-color: rgba(16, 185, 129, 0.8);
+  background: rgba(16, 185, 129, 0.2);
+  transform: scale(1.1);
+}
+
+/* Item Display - Image Only */
 .item-display {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
-  text-align: center;
 }
 
 .item-icon {
-  font-size: 1.8rem;
+  font-size: 2rem;
   line-height: 1;
-  margin-bottom: 2px;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  user-select: none;
+  pointer-events: none;
 }
 
 .item-quantity {
   position: absolute;
   bottom: 2px;
   right: 4px;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 800;
   color: #fbbf24;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 2px 5px;
   border-radius: 4px;
   line-height: 1.2;
-  min-width: 16px;
+  min-width: 18px;
   text-align: center;
+  user-select: none;
+  pointer-events: none;
 }
 
 /* Rarity Colors */
@@ -225,35 +227,38 @@
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
 }
 
-/* Item Tooltip */
+/* Tooltip - Show on hover */
 .item-tooltip {
   position: absolute;
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 8px;
-  background: rgba(20, 20, 40, 0.98);
+  background: linear-gradient(135deg, 
+    rgba(20, 20, 40, 0.98) 0%,
+    rgba(30, 30, 50, 0.98) 100%
+  );
   border: 2px solid rgba(139, 92, 246, 0.6);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
   min-width: 200px;
   max-width: 250px;
   z-index: 1000;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
 }
 
 .bag-slot:hover .item-tooltip,
 .equipment-slot:hover .item-tooltip {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .tooltip-name {
   font-size: 1rem;
   font-weight: 700;
-  color: #fff;
   margin-bottom: 4px;
   text-align: center;
 }
@@ -261,9 +266,10 @@
 .tooltip-type {
   font-size: 0.75rem;
   color: var(--text-secondary);
-  margin-bottom: 8px;
   text-align: center;
+  margin-bottom: 6px;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tooltip-description {
@@ -271,11 +277,12 @@
   color: var(--text-secondary);
   margin-bottom: 8px;
   line-height: 1.4;
+  text-align: center;
 }
 
 .tooltip-stats {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   margin-top: 8px;
   padding-top: 8px;
@@ -285,7 +292,8 @@
 .tooltip-stat {
   display: flex;
   justify-content: space-between;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  padding: 2px 0;
 }
 
 .tooltip-stat-label {
@@ -293,13 +301,13 @@
 }
 
 .tooltip-stat-value {
-  color: #10b981;
+  color: var(--success-color);
   font-weight: 600;
 }
 
 .tooltip-level {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--warning-color);
   margin-top: 4px;
   text-align: center;
 }
@@ -334,22 +342,25 @@
   font-size: 1.2rem;
 }
 
-/* Scrollbar for bag */
-.bag-grid::-webkit-scrollbar {
+/* Scrollbar */
+.inventory-card::-webkit-scrollbar,
+.equipment-card::-webkit-scrollbar {
   width: 6px;
 }
 
-.bag-grid::-webkit-scrollbar-track {
+.inventory-card::-webkit-scrollbar-track,
+.equipment-card::-webkit-scrollbar-track {
   background: rgba(20, 20, 40, 0.5);
   border-radius: 3px;
 }
 
-.bag-grid::-webkit-scrollbar-thumb {
+.inventory-card::-webkit-scrollbar-thumb,
+.equipment-card::-webkit-scrollbar-thumb {
   background: rgba(139, 92, 246, 0.5);
   border-radius: 3px;
 }
 
-.bag-grid::-webkit-scrollbar-thumb:hover {
+.inventory-card::-webkit-scrollbar-thumb:hover,
+.equipment-card::-webkit-scrollbar-thumb:hover {
   background: rgba(139, 92, 246, 0.7);
 }
-

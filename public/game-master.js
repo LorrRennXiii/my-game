@@ -2,7 +2,7 @@
 let currentConfig = null;
 
 // DOM Elements
-const sessionIdInput = document.getElementById('session-id-input');
+const userIdInput = document.getElementById('user-id-input');
 const loadConfigBtn = document.getElementById('load-config-btn');
 const saveConfigBtn = document.getElementById('save-config-btn');
 const resetConfigBtn = document.getElementById('reset-config-btn');
@@ -13,20 +13,20 @@ const messagesDiv = document.getElementById('messages');
 window.addEventListener('DOMContentLoaded', () => {
     loadPermanentConfig();
     
-    // Auto-fill session ID if available
-    const savedSession = localStorage.getItem('gameSessionId');
-    if (savedSession) {
-        sessionIdInput.value = savedSession;
+    // Auto-fill user ID if available
+    const savedUserId = localStorage.getItem('gameUserId');
+    if (savedUserId) {
+        userIdInput.value = savedUserId;
     }
 });
 
 loadConfigBtn.addEventListener('click', () => {
-    const sessionId = sessionIdInput.value.trim();
-    if (!sessionId) {
-        showMessage('Please enter a session ID to load from session', 'error');
+    const userId = userIdInput.value.trim();
+    if (!userId) {
+        showMessage('Please enter a user ID to load from game', 'error');
         return;
     }
-    loadConfigFromSession(sessionId);
+    loadConfigFromSession(userId);
 });
 
 saveConfigBtn.addEventListener('click', () => {
@@ -40,12 +40,12 @@ resetConfigBtn.addEventListener('click', () => {
 });
 
 applyToSessionBtn.addEventListener('click', () => {
-    const sessionId = sessionIdInput.value.trim();
-    if (!sessionId) {
-        showMessage('Please enter a session ID', 'error');
+    const userId = userIdInput.value.trim();
+    if (!userId) {
+        showMessage('Please enter a user ID', 'error');
         return;
     }
-    applyConfigToSession(sessionId);
+    applyConfigToSession(userId);
 });
 
 // Difficulty preset buttons
@@ -120,9 +120,9 @@ function getDefaultConfig() {
     };
 }
 
-async function loadConfigFromSession(sessionId) {
+async function loadConfigFromSession(userId) {
     try {
-        const response = await fetch(`/api/game/${sessionId}/config`);
+        const response = await fetch(`/api/game/${userId}/config`);
         if (!response.ok) {
             if (response.status === 404) {
                 showMessage('Game session not found. Make sure you have an active game.', 'error');
@@ -224,14 +224,14 @@ async function savePermanentConfig() {
     }
 }
 
-async function applyConfigToSession(sessionId) {
+async function applyConfigToSession(userId) {
     if (!currentConfig) {
         showMessage('Please load or configure settings first', 'error');
         return;
     }
 
     try {
-        const response = await fetch(`/api/game/${sessionId}/config`, {
+        const response = await fetch(`/api/game/${userId}/config`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(currentConfig)
