@@ -42,7 +42,7 @@
         <div id="game-screen" class="screen">
             <div class="game-container">
                 <div class="game-layout">
-                    <!-- Left Panel - Character & Tribe -->
+                    <!-- Left Panel - Character, Equipment & Inventory -->
                     <aside class="left-panel">
                         <!-- Player Status -->
                         <section class="card">
@@ -50,22 +50,35 @@
                             <div id="player-status"></div>
                         </section>
 
-                        <!-- Tribe Status -->
-                        <section class="card">
-                            <h2>🏛️ <span id="tribe-name">Stonefang</span> Tribe</h2>
-                            <div id="tribe-status"></div>
-                        </section>
+                        <!-- Toggle Button for Tribe/World/NPCs Panel -->
+                        <button id="tribe-info-toggle" class="btn btn-secondary btn-toggle">
+                            <span class="toggle-icon">📋</span>
+                            <span class="toggle-text">Tribe Info</span>
+                        </button>
 
-                        <!-- World State -->
-                        <section class="card">
-                            <h2>🌍 World State</h2>
-                            <div id="world-status"></div>
-                        </section>
-
-                        <!-- NPCs -->
-                        <section class="card">
-                            <h2>👥 Tribal Members</h2>
-                            <div id="npcs-list"></div>
+                        <!-- Combined Tribe/World/NPCs Panel (Hidden by default) -->
+                        <section class="card tribe-info-panel" id="tribe-info-panel" style="display: none;">
+                            <div class="tabs-container">
+                                <div class="tabs-header">
+                                    <button class="tab-btn active" data-tab="tribe">🏛️ Tribe</button>
+                                    <button class="tab-btn" data-tab="world">🌍 World</button>
+                                    <button class="tab-btn" data-tab="members">👥 Members</button>
+                                </div>
+                                <div class="tabs-content">
+                                    <div class="tab-pane active" id="tab-tribe">
+                                        <h3><span id="tribe-name">Stonefang</span> Tribe</h3>
+                                        <div id="tribe-status"></div>
+                                    </div>
+                                    <div class="tab-pane" id="tab-world">
+                                        <h3>World State</h3>
+                                        <div id="world-status"></div>
+                                    </div>
+                                    <div class="tab-pane" id="tab-members">
+                                        <h3>Tribal Members</h3>
+                                        <div id="npcs-list"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </section>
 
                         <!-- Equipment -->

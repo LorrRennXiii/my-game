@@ -39,6 +39,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initialize userId
   userId = getOrCreateUserId();
 
+  // Setup tribe info panel toggle
+  setupTribeInfoPanel();
+
   // Note: Backend already saves to active_games table after every action
   // No need to auto-save on page unload - game state is already persisted
   // The active_games table is the primary persistence mechanism
@@ -1622,20 +1625,123 @@ async function consumeItem(itemId) {
   }
 }
 
-// Add click handlers for equipment slots
-document.addEventListener("DOMContentLoaded", () => {
-  // Equipment slot handlers will be set up after DOM is ready
-  setTimeout(() => {
-    document.querySelectorAll(".equipment-slot").forEach((slot) => {
-      slot.addEventListener("click", (e) => {
-        const slotName = slot.dataset.slot;
-        const equipment = gameState?.equipment || {};
-        const item = equipment[slotName];
+// Setup Tribe Info Panel Toggle and Tabs
+function setupTribeInfoPanel() {
+  const toggleBtn = document.getElementById("tribe-info-toggle");
+  const panel = document.getElementById("tribe-info-panel");
+  const tabBtns = document.querySelectorAll(".tab-btn");
+  const tabPanes = document.querySelectorAll(".tab-pane");
 
-        if (item) {
-          unequipItem(slotName);
-        }
-      });
+  if (!toggleBtn || !panel) return;
+
+  // Toggle panel visibility
+  toggleBtn.addEventListener("click", () => {
+    const isVisible = panel.style.display !== "none";
+    panel.style.display = isVisible ? "none" : "block";
+    toggleBtn.querySelector(".toggle-icon").textContent = isVisible
+      ? "📋"
+      : "✕";
+    toggleBtn.querySelector(".toggle-text").textContent = isVisible
+      ? "Tribe Info"
+      : "Close";
+  });
+
+  // Tab switching
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetTab = btn.dataset.tab;
+
+      // Remove active class from all buttons and panes
+      tabBtns.forEach((b) => b.classList.remove("active"));
+      tabPanes.forEach((p) => p.classList.remove("active"));
+
+      // Add active class to clicked button and corresponding pane
+      btn.classList.add("active");
+      const targetPane = document.getElementById(`tab-${targetTab}`);
+      if (targetPane) {
+        targetPane.classList.add("active");
+      }
     });
+  });
+}
+
+// Setup drag and drop handlers for equipment slots
+function setupEquipmentDropHandlers() {
+  document.querySelectorAll(".equipment-slot").forEach((slot) => {
+    // Allow drop
+    slot.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      slot.classList.add("drag-over");
+    });
+
+    // Remove drag-over on drag leave
+    slot.addEventListener("dragleave", (e) => {
+      slot.classList.remove("drag-over");
+    });
+
+    // Handle drop
+    slot.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      slot.classList.remove("drag-over");
+
+      try {
+        const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+
+        if (data.source === "bag" && data.itemId) {
+          const slotName = slot.dataset.slot;
+          const itemType = data.itemType;
+
+          // Validate item can be equipped in this slot
+          if (slotName === "weapon" && itemType !== "weapon") {
+            addMessage(
+              "This item cannot be equipped in the weapon slot.",
+              "error"
+            );
+            return;
+          }
+          if (slotName === "armor" && itemType !== "armor") {
+            addMessage(
+              "This item cannot be equipped in the armor slot.",
+              "error"
+            );
+            return;
+          }
+          if (slotName.startsWith("accessory") && itemType !== "accessory") {
+            addMessage(
+              "This item cannot be equipped in the accessory slot.",
+              "error"
+            );
+            return;
+          }
+
+          // Equip the item
+          await equipItem(data.itemId);
+        }
+      } catch (error) {
+        console.error("Error handling drop:", error);
+      }
+    });
+
+    // Click to unequip
+    slot.addEventListener("click", (e) => {
+      // Only unequip if not dragging
+      if (e.target.closest(".dragging")) return;
+
+      const slotName = slot.dataset.slot;
+      const equipment = gameState?.equipment || {};
+      const item = equipment[slotName];
+
+      if (item) {
+        unequipItem(slotName);
+      }
+    });
+  });
+}
+
+// Setup drag and drop handlers for equipment slots on DOM ready
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    setupEquipmentDropHandlers();
   }, 100);
 });
