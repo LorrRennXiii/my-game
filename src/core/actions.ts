@@ -1,19 +1,22 @@
-import type { ActionType, ActionResult, Player, Tribe, PlayerSkills, WildAnimal, CombatResult } from '../types.js';
+import type { ActionType, ActionResult, Player, Tribe, PlayerSkills, WildAnimal, CombatResult, Item } from '../types.js';
 import { PlayerManager } from './player.js';
 import { TribeManager } from './tribe.js';
 import { CombatManager } from './combat.js';
+import { ItemManager } from './items.js';
 import type { GameConfigManager } from './gameConfig.js';
 
 export class ActionManager {
   private playerManager: PlayerManager;
   private tribeManager: TribeManager;
   private combatManager: CombatManager;
+  private itemManager: ItemManager;
   private configManager?: GameConfigManager;
 
   constructor(playerManager: PlayerManager, tribeManager: TribeManager, configManager?: GameConfigManager) {
     this.playerManager = playerManager;
     this.tribeManager = tribeManager;
     this.combatManager = new CombatManager();
+    this.itemManager = new ItemManager();
     this.configManager = configManager;
   }
 
@@ -24,6 +27,16 @@ export class ActionManager {
   executeAction(actionType: ActionType, npcId?: string): ActionResult {
     const player = this.playerManager.getPlayer();
     const tribe = this.tribeManager.getTribe();
+
+    // Check if player is resting (health <= 0)
+    if (this.playerManager.isResting()) {
+      const restDays = this.playerManager.getRestDaysRemaining();
+      return {
+        success: false,
+        partial: false,
+        message: `You are too injured to perform actions. You need to rest for ${restDays} more day${restDays > 1 ? 's' : ''} to recover.`
+      };
+    }
 
     // Check stamina
     const staminaCost = this.getStaminaCost(actionType);
@@ -48,6 +61,36 @@ export class ActionManager {
       result = this.handlePartialSuccess(actionType, player, tribe, npcId);
     } else {
       result = this.handleFailure(actionType, player, tribe, npcId);
+    }
+
+    // Generate loot items based on action (only on success/partial success)
+    const lootItems: Item[] = [];
+    if (result.success || result.partial) {
+      const loot = this.itemManager.generateLoot(actionType, player.level, player.stats.luck);
+      lootItems.push(...loot);
+    }
+    
+    // Add loot items to bag
+    const lootMessages: string[] = [];
+    for (const item of lootItems) {
+      const added = this.playerManager.addItemToBag(item);
+      if (added) {
+        const quantity = item.quantity || 1;
+        lootMessages.push(`${item.icon} ${item.name}${quantity > 1 ? ` x${quantity}` : ''}`);
+      } else {
+        lootMessages.push(`⚠️ ${item.name} - Bag is full!`);
+      }
+    }
+
+    // Add loot to rewards
+    if (lootItems.length > 0) {
+      if (!result.rewards) {
+        result.rewards = {};
+      }
+      result.rewards.items = lootItems;
+      if (lootMessages.length > 0) {
+        result.message += `\n📦 Loot: ${lootMessages.join(', ')}`;
+      }
     }
 
     // Apply rewards
@@ -454,8 +497,29 @@ export class ActionManager {
     // Apply damage to player
     this.playerManager.takeDamage(combatResult.damageTaken);
     
-    // Apply rewards if victorious
-    if (combatResult.victory && combatResult.rewards) {
+    // Check if player is now in resting state
+    const isNowResting = this.playerManager.isResting();
+    const currentHealth = this.playerManager.getHealth();
+    
+    // Update combat result message if player is knocked out
+    if (isNowResting && currentHealth <= 0) {
+      combatResult.message += ` You have been knocked out and must rest for 3 days to recover.`;
+    }
+    
+    // Generate combat loot
+    const combatPlayer = this.playerManager.getPlayer();
+    const combatLoot = this.itemManager.generateLoot('hunt', combatPlayer.level, combatPlayer.stats.luck);
+    
+    // Add combat loot to combat result
+    if (combatLoot.length > 0) {
+      if (!combatResult.rewards) {
+        combatResult.rewards = {};
+      }
+      combatResult.rewards.items = combatLoot;
+    }
+
+    // Apply rewards if victorious (only if not knocked out)
+    if (combatResult.victory && combatResult.rewards && !isNowResting) {
       if (combatResult.rewards.xp) {
         const xpMultiplier = this.configManager?.getXpMultiplier() || 1.0
         const levelUpMultiplier = this.configManager?.getLevelUpXpMultiplier() || 1.0
@@ -472,6 +536,12 @@ export class ActionManager {
       if (combatResult.rewards.wealth) {
         this.playerManager.updateInventory({ wealth: combatResult.rewards.wealth });
         this.tribeManager.updateResources({ wealth: combatResult.rewards.wealth });
+      }
+      // Add combat loot items to bag
+      if (combatResult.rewards.items) {
+        for (const item of combatResult.rewards.items) {
+          this.playerManager.addItemToBag(item);
+        }
       }
     }
     

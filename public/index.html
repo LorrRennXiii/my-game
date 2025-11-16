@@ -66,6 +66,47 @@
                             <h2>👥 Tribal Members</h2>
                             <div id="npcs-list"></div>
                         </section>
+
+                        <!-- Inventory -->
+                        <section class="card inventory-card">
+                            <h2>🎒 Inventory</h2>
+                            <div class="inventory-container">
+                                <!-- Equipment Slots -->
+                                <div class="equipment-section">
+                                    <h3 class="inventory-subtitle">Equipment</h3>
+                                    <div class="equipment-grid">
+                                        <div class="equipment-slot" data-slot="weapon" title="Weapon">
+                                            <div class="slot-label">⚔️</div>
+                                            <div class="slot-item" id="equipped-weapon"></div>
+                                        </div>
+                                        <div class="equipment-slot" data-slot="armor" title="Armor">
+                                            <div class="slot-label">🛡️</div>
+                                            <div class="slot-item" id="equipped-armor"></div>
+                                        </div>
+                                        <div class="equipment-slot" data-slot="accessory1" title="Accessory 1">
+                                            <div class="slot-label">💍</div>
+                                            <div class="slot-item" id="equipped-accessory1"></div>
+                                        </div>
+                                        <div class="equipment-slot" data-slot="accessory2" title="Accessory 2">
+                                            <div class="slot-label">💍</div>
+                                            <div class="slot-item" id="equipped-accessory2"></div>
+                                        </div>
+                                        <div class="equipment-slot" data-slot="accessory3" title="Accessory 3">
+                                            <div class="slot-label">💍</div>
+                                            <div class="slot-item" id="equipped-accessory3"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Bag/Inventory Grid -->
+                                <div class="bag-section">
+                                    <h3 class="inventory-subtitle">Bag <span id="bag-count">(0/50)</span></h3>
+                                    <div class="bag-grid" id="bag-grid">
+                                        <!-- Bag slots will be generated here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     </aside>
 
                     <!-- Main Content -->

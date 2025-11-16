@@ -7,7 +7,7 @@ import { SaveManager, type SaveData } from './core/saveLoad.js'
 import { WorldManager, type WorldState } from './core/world.js'
 import { EncounterManager, type EncounterEvent } from './core/encounters.js'
 import { GameConfigManager, type GameConfig } from './core/gameConfig.js'
-import type { Player, Tribe, NPC, Event } from './types.js'
+import type { Player, Tribe, NPC, Event, Item, EquipmentSlots } from './types.js'
 
 export class GameLoop {
   private playerManager: PlayerManager
@@ -127,9 +127,10 @@ export class GameLoop {
       const player = this.playerManager.getPlayer()
       const npc = this.npcManager.getNPC(npcId)
       
-      if (npc) {
+        if (npc) {
         // Mark NPC as encountered
         npc.encountered = true
+        if (!npc.flags) npc.flags = {};
         npc.flags.met = true
         
         // Record encounter
@@ -259,8 +260,25 @@ export class GameLoop {
       this.onDayEnd(this.day - 1, player, tribe)
     }
 
-    // Start the new day (restores stamina)
-    this.startDay()
+    // Process rest day if player is resting
+    if (this.playerManager.isResting()) {
+      const restDaysBefore = this.playerManager.getRestDaysRemaining();
+      this.playerManager.processRestDay();
+      const restDaysAfter = this.playerManager.getRestDaysRemaining();
+      const player = this.playerManager.getPlayer();
+      
+      if (restDaysAfter > 0) {
+        growthMessages.push(`💤 You are resting to recover. ${restDaysAfter} day${restDaysAfter > 1 ? 's' : ''} remaining. Health: ${player.health}/${player.maxHealth}`);
+      } else {
+        growthMessages.push(`✅ You have fully recovered! Your health has been restored to ${player.maxHealth}.`);
+      }
+    }
+
+    // Start the new day (restores stamina only if not resting)
+    // If resting, don't restore stamina - player needs to rest
+    if (!this.playerManager.isResting()) {
+      this.startDay();
+    }
 
     // Return all messages for display
     return [...worldMessages, ...growthMessages]
@@ -310,6 +328,40 @@ export class GameLoop {
 
   getMaxHealth(): number {
     return this.playerManager.getMaxHealth()
+  }
+
+  isResting(): boolean {
+    return this.playerManager.isResting()
+  }
+
+  getRestDaysRemaining(): number {
+    return this.playerManager.getRestDaysRemaining()
+  }
+
+  // Bag/Inventory methods
+  getBag() {
+    return this.playerManager.getBag()
+  }
+
+  getEquipment() {
+    return this.playerManager.getEquipment()
+  }
+
+  equipItem(itemId: string, slot: string) {
+    const bag = this.playerManager.getBag()
+    const item = bag.find((i: Item) => i.id === itemId)
+    if (!item) {
+      return { success: false, message: 'Item not found in bag.' }
+    }
+    return this.playerManager.equipItem(item, slot as keyof EquipmentSlots)
+  }
+
+  unequipItem(slot: string) {
+    return this.playerManager.unequipItem(slot as keyof EquipmentSlots)
+  }
+
+  consumeItem(itemId: string) {
+    return this.playerManager.consumeItem(itemId)
   }
 
   executeCombat(animal: any): any {

@@ -37,8 +37,11 @@ export class TribeManager {
   updateResources(updates: Partial<TribeResources>): void {
     Object.entries(updates).forEach(([key, value]) => {
       if (value !== undefined) {
-        this.tribe.resources[key as keyof TribeResources] = 
-          Math.max(0, this.tribe.resources[key as keyof TribeResources] + value);
+        const resourceKey = key as keyof TribeResources;
+        const currentValue = this.tribe.resources[resourceKey];
+        if (currentValue !== undefined) {
+          this.tribe.resources[resourceKey] = Math.max(0, currentValue + value);
+        }
       }
     });
   }
@@ -65,7 +68,7 @@ export class TribeManager {
   }
 
   getResource(resource: keyof TribeResources): number {
-    return this.tribe.resources[resource];
+    return this.tribe.resources[resource] || 0;
   }
 
   getAttribute(attribute: keyof TribeAttributes): number {

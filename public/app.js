@@ -58,6 +58,17 @@ function setupEventListeners() {
         return;
       }
 
+      // Don't allow actions if player is resting
+      if (gameState?.isResting && gameState?.restDaysRemaining > 0) {
+        addMessage(
+          `💤 You are too injured to perform actions. Rest for ${
+            gameState.restDaysRemaining
+          } more day${gameState.restDaysRemaining > 1 ? "s" : ""} to recover.`,
+          "error"
+        );
+        return;
+      }
+
       const action = actionBtn.dataset.action;
       if (action === "visit") {
         showNPCModal();
@@ -164,6 +175,7 @@ async function startNewGame() {
 
     showGameScreen();
     updateUI();
+    updateInventory();
     addMessage("✅ New game started!", "success");
 
     // Update health in status bar
@@ -222,8 +234,32 @@ async function executeAction(action, npcId = null, combatDecision = null) {
     const data = await response.json();
     gameState = data;
 
+    // Update resting state
+    if (data.isResting !== undefined) {
+      gameState.isResting = data.isResting;
+      gameState.restDaysRemaining = data.restDaysRemaining || 0;
+    }
+
+    // Update inventory
+    if (data.bag !== undefined) {
+      gameState.bag = data.bag;
+    }
+    if (data.equipment !== undefined) {
+      gameState.equipment = data.equipment;
+    }
+
     // Show result message
     addMessage(data.result.message, data.result.success ? "success" : "error");
+
+    // Show resting warning if player is now resting
+    if (data.isResting && data.restDaysRemaining > 0) {
+      addMessage(
+        `💤 You are too injured to continue. You must rest for ${
+          data.restDaysRemaining
+        } day${data.restDaysRemaining > 1 ? "s" : ""} to recover.`,
+        "error"
+      );
+    }
 
     // Update health in status bar
     if (data.health !== undefined) {
@@ -382,6 +418,7 @@ async function executeAction(action, npcId = null, combatDecision = null) {
     }
 
     updateUI();
+    updateInventory();
 
     // Auto-save after action (silent - no message)
     if (typeof saveManager !== "undefined" && saveManager && sessionId) {
@@ -424,10 +461,33 @@ async function endDay() {
     const data = await response.json();
     gameState = data;
 
-    addMessage(
-      "✨ A new day begins! Your stamina has been restored.",
-      "success"
-    );
+    // Update resting state
+    if (data.isResting !== undefined) {
+      gameState.isResting = data.isResting;
+      gameState.restDaysRemaining = data.restDaysRemaining || 0;
+    }
+
+    // Update inventory
+    if (data.bag !== undefined) {
+      gameState.bag = data.bag;
+    }
+    if (data.equipment !== undefined) {
+      gameState.equipment = data.equipment;
+    }
+
+    if (data.isResting && data.restDaysRemaining > 0) {
+      addMessage(
+        `💤 You are resting to recover. ${data.restDaysRemaining} day${
+          data.restDaysRemaining > 1 ? "s" : ""
+        } remaining. Health: ${data.health}/${data.maxHealth}`,
+        "error"
+      );
+    } else {
+      addMessage(
+        "✨ A new day begins! Your stamina has been restored.",
+        "success"
+      );
+    }
 
     if (data.growthMessages && data.growthMessages.length > 0) {
       data.growthMessages.forEach((msg) => {
@@ -535,9 +595,25 @@ function updateUI() {
   document.getElementById("stamina").textContent = gameState.stamina || 0;
   document.getElementById("max-stamina").textContent =
     gameState.maxStamina || 5;
-  document.getElementById("health").textContent = gameState.health || 100;
-  document.getElementById("max-health").textContent =
-    gameState.maxHealth || 100;
+
+  // Update health display
+  const healthEl = document.getElementById("health");
+  const maxHealthEl = document.getElementById("max-health");
+  if (healthEl) healthEl.textContent = gameState.health || 100;
+  if (maxHealthEl) maxHealthEl.textContent = gameState.maxHealth || 100;
+
+  // Show resting indicator if applicable
+  if (gameState.isResting && gameState.restDaysRemaining > 0) {
+    const healthContainer = healthEl?.parentElement;
+    if (healthContainer) {
+      healthContainer.title = `Resting: ${gameState.restDaysRemaining} day${
+        gameState.restDaysRemaining > 1 ? "s" : ""
+      } remaining`;
+    }
+  }
+
+  // Update inventory
+  updateInventory();
 
   // Update player status
   if (gameState.player) {
@@ -966,24 +1042,42 @@ function enableAllActionButtons() {
   // Only enable if there's no active encounter
   if (!currentCombatAnimal) {
     const stamina = gameState?.stamina || 0;
+    const isResting = gameState?.isResting || false;
+    const restDays = gameState?.restDaysRemaining || 0;
+
     document
       .querySelectorAll(".action-btn-compact, .action-btn")
       .forEach((btn) => {
         const actionBtn = btn;
         const staminaCost = parseInt(actionBtn.dataset.stamina || "1");
 
-        // Disable if not enough stamina
-        actionBtn.disabled = stamina < staminaCost;
+        // Disable if resting or not enough stamina
+        actionBtn.disabled = isResting || stamina < staminaCost;
 
         // Update stamina cost display to show if affordable
         const staminaCostEl = actionBtn.querySelector(".stamina-cost");
         if (staminaCostEl) {
-          if (stamina < staminaCost) {
+          if (isResting) {
+            staminaCostEl.style.color = "var(--danger-color)";
+            staminaCostEl.style.opacity = "0.7";
+            staminaCostEl.textContent = `💤${restDays}`;
+            staminaCostEl.title = `Resting: ${restDays} day${
+              restDays > 1 ? "s" : ""
+            } remaining`;
+          } else if (stamina < staminaCost) {
             staminaCostEl.style.color = "var(--danger-color)";
             staminaCostEl.style.opacity = "0.6";
+            staminaCostEl.title = "";
+            // Restore original stamina cost text
+            const originalCost = actionBtn.dataset.stamina || "1";
+            staminaCostEl.textContent = `⚡${originalCost}`;
           } else {
             staminaCostEl.style.color = "#fbbf24";
             staminaCostEl.style.opacity = "1";
+            // Restore original stamina cost text
+            const originalCost = actionBtn.dataset.stamina || "1";
+            staminaCostEl.textContent = `⚡${originalCost}`;
+            staminaCostEl.title = "";
           }
         }
       });
@@ -1103,3 +1197,360 @@ function getPermanentNPCs() {
   }
   return null;
 }
+
+// Inventory Management
+function updateInventory() {
+  if (!gameState) return;
+
+  const bag = gameState.bag || [];
+  const equipment = gameState.equipment || {
+    weapon: null,
+    armor: null,
+    accessory1: null,
+    accessory2: null,
+    accessory3: null,
+  };
+
+  // Update bag count
+  const bagCountEl = document.getElementById("bag-count");
+  if (bagCountEl) {
+    bagCountEl.textContent = `(${bag.length}/50)`;
+  }
+
+  // Update equipment slots
+  updateEquipmentSlot("weapon", equipment.weapon);
+  updateEquipmentSlot("armor", equipment.armor);
+  updateEquipmentSlot("accessory1", equipment.accessory1);
+  updateEquipmentSlot("accessory2", equipment.accessory2);
+  updateEquipmentSlot("accessory3", equipment.accessory3);
+
+  // Update bag grid
+  updateBagGrid(bag);
+}
+
+function updateEquipmentSlot(slotName, item) {
+  const slotEl = document.querySelector(
+    `.equipment-slot[data-slot="${slotName}"]`
+  );
+  const itemEl = document.getElementById(`equipped-${slotName}`);
+
+  if (!slotEl || !itemEl) return;
+
+  if (item) {
+    slotEl.classList.add("has-item");
+    slotEl.classList.add(`item-${item.rarity}`);
+    itemEl.innerHTML = createItemDisplay(item, true);
+    slotEl.title = item.name;
+  } else {
+    slotEl.classList.remove("has-item");
+    slotEl.classList.remove(
+      "item-common",
+      "item-uncommon",
+      "item-rare",
+      "item-epic",
+      "item-legendary"
+    );
+    itemEl.innerHTML = "";
+    slotEl.title = getSlotLabel(slotName);
+  }
+}
+
+function updateBagGrid(bag) {
+  const bagGrid = document.getElementById("bag-grid");
+  if (!bagGrid) return;
+
+  // Clear existing slots
+  bagGrid.innerHTML = "";
+
+  // Create 50 slots
+  for (let i = 0; i < 50; i++) {
+    const slot = document.createElement("div");
+    slot.className = "bag-slot empty";
+    slot.dataset.slotIndex = i;
+
+    if (i < bag.length) {
+      const item = bag[i];
+      slot.classList.remove("empty");
+      slot.classList.add(`item-${item.rarity}`);
+      slot.innerHTML = createItemDisplay(item, false);
+      slot.dataset.itemId = item.id;
+      slot.dataset.itemType = item.type;
+
+      // Add click handler
+      slot.addEventListener("click", () => handleItemClick(item, i));
+    }
+
+    bagGrid.appendChild(slot);
+  }
+}
+
+function createItemDisplay(item, isEquipment) {
+  const quantity = item.quantity || 1;
+  const quantityDisplay =
+    item.stackable && quantity > 1
+      ? `<div class="item-quantity">${quantity}</div>`
+      : "";
+
+  return `
+    <div class="item-display">
+      <div class="item-icon">${item.icon || "📦"}</div>
+      ${quantityDisplay}
+      <div class="item-tooltip">
+        <div class="tooltip-name" style="color: ${getRarityColor(
+          item.rarity
+        )}">${item.name}</div>
+        <div class="tooltip-type">${item.type} • ${item.rarity}</div>
+        <div class="tooltip-description">${item.description}</div>
+        ${createStatDisplay(item)}
+        ${
+          item.level
+            ? `<div class="tooltip-level">Requires Level ${item.level}</div>`
+            : ""
+        }
+        <div class="tooltip-actions">
+          ${
+            item.type === "consumable"
+              ? `<button class="tooltip-action-btn" onclick="event.stopPropagation(); consumeItem('${item.id}')">Use</button>`
+              : ""
+          }
+          ${
+            !isEquipment &&
+            (item.type === "weapon" ||
+              item.type === "armor" ||
+              item.type === "accessory")
+              ? `<button class="tooltip-action-btn" onclick="event.stopPropagation(); equipItem('${item.id}')">Equip</button>`
+              : ""
+          }
+          ${
+            isEquipment
+              ? `<button class="tooltip-action-btn" onclick="event.stopPropagation(); unequipItem('${getSlotFromItem(
+                  item
+                )}')">Unequip</button>`
+              : ""
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function createStatDisplay(item) {
+  if (!item.stats) return "";
+
+  const stats = [];
+  if (item.stats.str) stats.push({ label: "STR", value: `+${item.stats.str}` });
+  if (item.stats.dex) stats.push({ label: "DEX", value: `+${item.stats.dex}` });
+  if (item.stats.wis) stats.push({ label: "WIS", value: `+${item.stats.wis}` });
+  if (item.stats.cha) stats.push({ label: "CHA", value: `+${item.stats.cha}` });
+  if (item.stats.luck)
+    stats.push({ label: "LCK", value: `+${item.stats.luck}` });
+  if (item.stats.health)
+    stats.push({ label: "HP", value: `+${item.stats.health}` });
+  if (item.stats.stamina)
+    stats.push({ label: "STA", value: `+${item.stats.stamina}` });
+  if (item.stats.damage)
+    stats.push({ label: "DMG", value: `+${item.stats.damage}` });
+  if (item.stats.defense)
+    stats.push({ label: "DEF", value: `+${item.stats.defense}` });
+
+  if (stats.length === 0) return "";
+
+  return `
+    <div class="tooltip-stats">
+      ${stats
+        .map(
+          (stat) => `
+        <div class="tooltip-stat">
+          <span class="tooltip-stat-label">${stat.label}</span>
+          <span class="tooltip-stat-value">${stat.value}</span>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function getRarityColor(rarity) {
+  const colors = {
+    common: "#9ca3af",
+    uncommon: "#10b981",
+    rare: "#3b82f6",
+    epic: "#a855f7",
+    legendary: "#f59e0b",
+  };
+  return colors[rarity] || colors.common;
+}
+
+function getSlotLabel(slotName) {
+  const labels = {
+    weapon: "Weapon",
+    armor: "Armor",
+    accessory1: "Accessory 1",
+    accessory2: "Accessory 2",
+    accessory3: "Accessory 3",
+  };
+  return labels[slotName] || slotName;
+}
+
+function getSlotFromItem(item) {
+  if (item.type === "weapon") return "weapon";
+  if (item.type === "armor") return "armor";
+  if (item.type === "accessory") {
+    // Find which accessory slot it's in
+    const equipment = gameState?.equipment || {};
+    if (equipment.accessory1?.id === item.id) return "accessory1";
+    if (equipment.accessory2?.id === item.id) return "accessory2";
+    if (equipment.accessory3?.id === item.id) return "accessory3";
+    return "accessory1"; // Default
+  }
+  return "";
+}
+
+function handleItemClick(item, bagIndex) {
+  // Show context menu or directly equip if it's equipment
+  if (
+    item.type === "weapon" ||
+    item.type === "armor" ||
+    item.type === "accessory"
+  ) {
+    equipItem(item.id);
+  } else if (item.type === "consumable") {
+    consumeItem(item.id);
+  }
+}
+
+async function equipItem(itemId) {
+  if (!sessionId || !gameState) return;
+
+  // Determine slot based on item type
+  let slot = "";
+  const bag = gameState.bag || [];
+  const item = bag.find((i) => i.id === itemId);
+
+  if (!item) {
+    addMessage("Item not found in bag.", "error");
+    return;
+  }
+
+  if (item.type === "weapon") slot = "weapon";
+  else if (item.type === "armor") slot = "armor";
+  else if (item.type === "accessory") {
+    // Find first empty accessory slot
+    const equipment = gameState.equipment || {};
+    if (!equipment.accessory1) slot = "accessory1";
+    else if (!equipment.accessory2) slot = "accessory2";
+    else if (!equipment.accessory3) slot = "accessory3";
+    else slot = "accessory1"; // Replace first one
+  } else {
+    addMessage("This item cannot be equipped.", "error");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/game/${sessionId}/equip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId, slot }),
+    });
+
+    const data = await response.json();
+
+    if (data.result.success) {
+      gameState = {
+        ...gameState,
+        bag: data.bag || [],
+        equipment: data.equipment || gameState.equipment,
+      };
+      updateInventory();
+      updateUI();
+      addMessage(data.result.message, "success");
+    } else {
+      addMessage(data.result.message, "error");
+    }
+  } catch (error) {
+    console.error("Error equipping item:", error);
+    addMessage("Failed to equip item.", "error");
+  }
+}
+
+async function unequipItem(slot) {
+  if (!sessionId || !gameState) return;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/game/${sessionId}/unequip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot }),
+    });
+
+    const data = await response.json();
+
+    if (data.result.success) {
+      gameState = {
+        ...gameState,
+        bag: data.bag || [],
+        equipment: data.equipment || gameState.equipment,
+      };
+      updateInventory();
+      updateUI();
+      addMessage(data.result.message, "success");
+    } else {
+      addMessage(data.result.message, "error");
+    }
+  } catch (error) {
+    console.error("Error unequipping item:", error);
+    addMessage("Failed to unequip item.", "error");
+  }
+}
+
+async function consumeItem(itemId) {
+  if (!sessionId || !gameState) return;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/game/${sessionId}/consume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId }),
+    });
+
+    const data = await response.json();
+
+    if (data.result.success) {
+      gameState = {
+        ...gameState,
+        bag: data.bag || [],
+        health: data.health || gameState.health,
+        maxHealth: data.maxHealth || gameState.maxHealth,
+        stamina: data.stamina || gameState.stamina,
+        maxStamina: data.maxStamina || gameState.maxStamina,
+      };
+      updateInventory();
+      updateUI();
+      addMessage(data.result.message, "success");
+    } else {
+      addMessage(data.result.message, "error");
+    }
+  } catch (error) {
+    console.error("Error consuming item:", error);
+    addMessage("Failed to consume item.", "error");
+  }
+}
+
+// Add click handlers for equipment slots
+document.addEventListener("DOMContentLoaded", () => {
+  // Equipment slot handlers will be set up after DOM is ready
+  setTimeout(() => {
+    document.querySelectorAll(".equipment-slot").forEach((slot) => {
+      slot.addEventListener("click", (e) => {
+        const slotName = slot.dataset.slot;
+        const equipment = gameState?.equipment || {};
+        const item = equipment[slotName];
+
+        if (item) {
+          unequipItem(slotName);
+        }
+      });
+    });
+  }, 100);
+});

@@ -79,22 +79,24 @@ export class NPCManager {
   }
 
   updateRelationship(npcId: string, change: number): void {
-    const npc = this.npcs.get(npcId)
-    if (npc) {
-      npc.relationship = Math.max(0, Math.min(100, npc.relationship + change))
-    }
+    // Relationships are stored in player, not NPC
+    // This method is kept for backward compatibility but does nothing
+    // Use PlayerManager.updateRelationship instead
   }
 
   setFlag(npcId: string, flag: string, value: boolean): void {
     const npc = this.npcs.get(npcId)
     if (npc) {
+      if (!npc.flags) {
+        npc.flags = {}
+      }
       npc.flags[flag] = value
     }
   }
 
   getFlag(npcId: string, flag: string): boolean {
     const npc = this.npcs.get(npcId)
-    return npc?.flags[flag] || false
+    return npc?.flags?.[flag] || false
   }
 
   addNPC(npc: NPC): void {
@@ -108,6 +110,9 @@ export class NPCManager {
   addXP(npcId: string, amount: number, xpMultiplier: number = 1.0, levelUpMultiplier: number = 1.0): boolean {
     const npc = this.npcs.get(npcId)
     if (!npc) return false
+
+    if (npc.xp === undefined) npc.xp = 0
+    if (npc.level === undefined) npc.level = 1
 
     const adjustedAmount = Math.floor(amount * xpMultiplier)
     npc.xp += adjustedAmount
@@ -127,12 +132,13 @@ export class NPCManager {
     const npc = this.npcs.get(npcId)
     if (!npc) return
 
+    if (npc.level === undefined) npc.level = 1
     npc.level += 1
     npc.xp = 0
 
     // Improve stats based on growth_path
     const statPoints = 2
-    const growthPath = npc.growth_path.toLowerCase()
+    const growthPath = (npc.growth_path || 'warrior').toLowerCase()
 
     // Determine which stats to improve based on growth path
     let preferredStats: (keyof NPCStats)[] = []
@@ -151,6 +157,11 @@ export class NPCManager {
       preferredStats = ['str', 'dex', 'wis', 'cha', 'luck']
     }
 
+    // Ensure stats exist
+    if (!npc.stats) {
+      npc.stats = { str: 3, dex: 3, wis: 3, cha: 3 }
+    }
+
     // Distribute stat points with RNG (70% chance for preferred stats, 30% for random)
     // Each stat point has 90% chance to be +1, 10% chance to be +2
     for (let i = 0; i < statPoints; i++) {
@@ -159,11 +170,13 @@ export class NPCManager {
 
       if (Math.random() < 0.7 && preferredStats.length > 0) {
         const stat = preferredStats[Math.floor(Math.random() * preferredStats.length)]
-        npc.stats[stat] += statIncrease
+        if (stat !== 'luck' || npc.stats.luck !== undefined) {
+          npc.stats[stat] = (npc.stats[stat] || 0) + statIncrease
+        }
       } else {
-        const allStats: (keyof NPCStats)[] = ['str', 'dex', 'wis', 'cha', 'luck']
+        const allStats: (keyof NPCStats)[] = ['str', 'dex', 'wis', 'cha']
         const stat = allStats[Math.floor(Math.random() * allStats.length)]
-        npc.stats[stat] += statIncrease
+        npc.stats[stat] = (npc.stats[stat] || 0) + statIncrease
       }
     }
   }
@@ -197,7 +210,7 @@ export class NPCManager {
       }
 
       // Relationship-based growth
-      const relationship = npc.relationship
+      const relationship = relationshipBonus[npcId] || 50
       if (relationship >= 80) {
         xpGain += 3 // Strong allies grow faster
       } else if (relationship >= 60) {
@@ -251,8 +264,13 @@ export class NPCManager {
    */
   improveNPCStat(npcId: string, stat: keyof NPCStats, amount: number = 1): void {
     const npc = this.npcs.get(npcId)
-    if (npc && npc.stats) {
-      npc.stats[stat] = Math.max(1, npc.stats[stat] + amount)
+    if (npc) {
+      if (!npc.stats) {
+        npc.stats = { str: 3, dex: 3, wis: 3, cha: 3 }
+      }
+      if (stat !== 'luck' || npc.stats.luck !== undefined) {
+        npc.stats[stat] = Math.max(1, (npc.stats[stat] || 0) + amount)
+      }
     }
   }
 }

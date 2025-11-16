@@ -1,4 +1,4 @@
-import type { Player, PlayerStats, PlayerSkills, PlayerInventory } from '../types.js';
+import type { Player, PlayerStats, PlayerSkills, PlayerInventory, Item, EquipmentSlots } from '../types.js';
 
 export class PlayerManager {
   private player: Player;
@@ -41,7 +41,16 @@ export class PlayerManager {
       health: 100,
       maxHealth: 100,
       relationships: {},
-      flags: {}
+      flags: {},
+      restDaysRemaining: 0,
+      bag: [],
+      equipment: {
+        weapon: null,
+        armor: null,
+        accessory1: null,
+        accessory2: null,
+        accessory3: null
+      }
     };
   }
 
@@ -210,6 +219,35 @@ export class PlayerManager {
 
   takeDamage(amount: number): void {
     this.player.health = Math.max(0, this.player.health - amount);
+    
+    // If health reaches 0 or below, enter resting state
+    if (this.player.health <= 0) {
+      this.player.restDaysRemaining = 3;
+      this.player.health = 0; // Ensure it's exactly 0, not negative
+    }
+  }
+  
+  isResting(): boolean {
+    return (this.player.restDaysRemaining || 0) > 0;
+  }
+  
+  getRestDaysRemaining(): number {
+    return this.player.restDaysRemaining || 0;
+  }
+  
+  processRestDay(): void {
+    if (this.player.restDaysRemaining && this.player.restDaysRemaining > 0) {
+      this.player.restDaysRemaining -= 1;
+      
+      // Restore health gradually during rest (33% per day)
+      if (this.player.restDaysRemaining > 0) {
+        const healAmount = Math.floor(this.player.maxHealth / 3);
+        this.player.health = Math.min(this.player.maxHealth, this.player.health + healAmount);
+      } else {
+        // Rest complete - fully restore health
+        this.player.health = this.player.maxHealth;
+      }
+    }
   }
 
   heal(amount: number): void {
@@ -218,6 +256,224 @@ export class PlayerManager {
 
   restoreHealth(): void {
     this.player.health = this.player.maxHealth;
+  }
+
+  // Bag/Inventory Management
+  addItemToBag(item: Item): boolean {
+    if (!this.player.bag) {
+      this.player.bag = [];
+    }
+
+    // Check if item is stackable and already exists
+    if (item.stackable) {
+      const existingItem = this.player.bag.find(i => i.id === item.id);
+      if (existingItem && existingItem.stackable) {
+        const currentQuantity = existingItem.quantity || 1;
+        const newQuantity = (item.quantity || 1) + currentQuantity;
+        const maxStack = existingItem.maxStack || 99;
+        
+        if (newQuantity <= maxStack) {
+          existingItem.quantity = newQuantity;
+          return true;
+        } else {
+          // Partial stack
+          existingItem.quantity = maxStack;
+          item.quantity = newQuantity - maxStack;
+          // Continue to add remaining as new item
+        }
+      }
+    }
+
+    // Check bag capacity (50 slots like Diablo)
+    const maxBagSlots = 50;
+    if (this.player.bag.length >= maxBagSlots) {
+      return false; // Bag is full
+    }
+
+    this.player.bag.push(item);
+    return true;
+  }
+
+  removeItemFromBag(itemId: string, quantity: number = 1): boolean {
+    if (!this.player.bag) return false;
+
+    const itemIndex = this.player.bag.findIndex(i => i.id === itemId);
+    if (itemIndex === -1) return false;
+
+    const item = this.player.bag[itemIndex];
+    
+    if (item.stackable && item.quantity) {
+      if (item.quantity > quantity) {
+        item.quantity -= quantity;
+        return true;
+      } else if (item.quantity === quantity) {
+        this.player.bag.splice(itemIndex, 1);
+        return true;
+      }
+    } else {
+      this.player.bag.splice(itemIndex, 1);
+      return true;
+    }
+
+    return false;
+  }
+
+  getBag(): Item[] {
+    return this.player.bag || [];
+  }
+
+  // Equipment Management
+  equipItem(item: Item, slot: keyof EquipmentSlots): { success: boolean; message: string; unequipped?: Item } {
+    if (!this.player.equipment) {
+      this.player.equipment = {
+        weapon: null,
+        armor: null,
+        accessory1: null,
+        accessory2: null,
+        accessory3: null
+      };
+    }
+
+    // Validate item type matches slot
+    if (!this.canEquipInSlot(item, slot)) {
+      return { success: false, message: `Cannot equip ${item.name} in ${slot} slot.` };
+    }
+
+    // Check level requirement
+    if (item.level && item.level > this.player.level) {
+      return { success: false, message: `Requires level ${item.level} to equip.` };
+    }
+
+    // Remove item from bag
+    if (!this.removeItemFromBag(item.id, 1)) {
+      return { success: false, message: 'Item not found in bag.' };
+    }
+
+    // Unequip existing item if any
+    const unequipped = this.player.equipment[slot];
+    if (unequipped) {
+      // Add unequipped item back to bag
+      this.addItemToBag(unequipped);
+    }
+
+    // Equip new item
+    this.player.equipment[slot] = item;
+
+    // Apply equipment stats
+    this.applyEquipmentStats();
+
+    return { 
+      success: true, 
+      message: `Equipped ${item.name}.`,
+      unequipped: unequipped || undefined
+    };
+  }
+
+  unequipItem(slot: keyof EquipmentSlots): { success: boolean; message: string } {
+    if (!this.player.equipment) {
+      return { success: false, message: 'No equipment system initialized.' };
+    }
+
+    const item = this.player.equipment[slot];
+    if (!item) {
+      return { success: false, message: `No item equipped in ${slot} slot.` };
+    }
+
+    // Remove from equipment
+    this.player.equipment[slot] = null;
+
+    // Add back to bag
+    if (!this.addItemToBag(item)) {
+      // If bag is full, put it back
+      this.player.equipment[slot] = item;
+      return { success: false, message: 'Bag is full. Cannot unequip item.' };
+    }
+
+    // Recalculate stats
+    this.applyEquipmentStats();
+
+    return { success: true, message: `Unequipped ${item.name}.` };
+  }
+
+  private canEquipInSlot(item: Item, slot: keyof EquipmentSlots): boolean {
+    switch (slot) {
+      case 'weapon':
+        return item.type === 'weapon';
+      case 'armor':
+        return item.type === 'armor';
+      case 'accessory1':
+      case 'accessory2':
+      case 'accessory3':
+        return item.type === 'accessory';
+      default:
+        return false;
+    }
+  }
+
+  private applyEquipmentStats(): void {
+    if (!this.player.equipment) return;
+    // Equipment stats are applied when calculating effective stats
+    // This method is a placeholder for future stat recalculation logic
+  }
+
+  getEquipment(): EquipmentSlots {
+    return this.player.equipment || {
+      weapon: null,
+      armor: null,
+      accessory1: null,
+      accessory2: null,
+      accessory3: null
+    };
+  }
+
+  getEffectiveStats(): PlayerStats {
+    const baseStats = { ...this.player.stats };
+    
+    // Apply equipment bonuses
+    if (this.player.equipment) {
+      Object.values(this.player.equipment).forEach(item => {
+        if (item && item.stats) {
+          baseStats.str += item.stats.str || 0;
+          baseStats.dex += item.stats.dex || 0;
+          baseStats.wis += item.stats.wis || 0;
+          baseStats.cha += item.stats.cha || 0;
+          baseStats.luck += item.stats.luck || 0;
+        }
+      });
+    }
+
+    return baseStats;
+  }
+
+  // Consume item
+  consumeItem(itemId: string): { success: boolean; message: string } {
+    if (!this.player.bag) return { success: false, message: 'Bag not initialized.' };
+
+    const item = this.player.bag.find(i => i.id === itemId);
+    if (!item) {
+      return { success: false, message: 'Item not found in bag.' };
+    }
+
+    if (item.type !== 'consumable') {
+      return { success: false, message: 'Item is not consumable.' };
+    }
+
+    if (!item.consumableEffect) {
+      return { success: false, message: 'Item has no consumable effect.' };
+    }
+
+    // Apply effects
+    if (item.consumableEffect.health) {
+      this.heal(item.consumableEffect.health);
+    }
+    if (item.consumableEffect.stamina) {
+      this.player.stamina = Math.min(this.player.maxStamina, this.player.stamina + item.consumableEffect.stamina);
+    }
+
+    // Remove item
+    this.removeItemFromBag(itemId, 1);
+
+    return { success: true, message: `Consumed ${item.name}.` };
   }
 }
 

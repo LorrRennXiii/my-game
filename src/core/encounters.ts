@@ -156,7 +156,8 @@ export class EncounterManager {
     }
 
     // Add dynamic encounters based on NPC level and relationship
-    if (npc.level >= 3 && npc.relationship >= 60) {
+    const relationship = player.relationships[npc.id] || 50;
+    if ((npc.level || 1) >= 3 && relationship >= 60) {
       available.push(this.generateDynamicEncounter(npc, player))
     }
 
@@ -173,8 +174,12 @@ export class EncounterManager {
     const req = encounter.requirements
     if (!req) return true
 
-    if (req.relationship !== undefined && npc.relationship < req.relationship) {
-      return false
+    const relationship = player.relationships[npc.id] || 50;
+
+    if (req.relationship !== undefined) {
+      if (relationship < req.relationship) {
+        return false;
+      }
     }
 
     if (req.npcLevel !== undefined && (npc.level || 1) < req.npcLevel) {
@@ -199,7 +204,7 @@ export class EncounterManager {
     }
 
     // Random chance based on relationship
-    const encounterChance = 0.3 + (npc.relationship / 200)
+    const encounterChance = 0.3 + (relationship / 200)
     return Math.random() < encounterChance
   }
 
@@ -235,7 +240,8 @@ export class EncounterManager {
     const description = descriptions[type][Math.floor(Math.random() * descriptions[type].length)]
 
     // Generate rewards based on NPC level and relationship
-    const baseXP = (npc.level || 1) * 5 + Math.floor(npc.relationship / 10)
+    const relationship = player.relationships[npc.id] || 50;
+    const baseXP = (npc.level || 1) * 5 + Math.floor(relationship / 10)
     const statBonus: Partial<Record<keyof Player['stats'], number>> = {}
     const statToBoost = ['str', 'dex', 'wis', 'cha'][Math.floor(Math.random() * 4)] as keyof Player['stats']
     statBonus[statToBoost] = 1
@@ -248,7 +254,7 @@ export class EncounterManager {
       rewards: {
         xp: baseXP,
         statBonus,
-        relationship: Math.floor(npc.relationship / 10) + 5
+        relationship: Math.floor(relationship / 10) + 5
       }
     }
   }

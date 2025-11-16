@@ -96,7 +96,11 @@ app.post('/api/game/new', (req, res) => {
       stamina: game.getCurrentStamina(),
       maxStamina: game.getMaxStamina(),
       health: game.getHealth(),
-      maxHealth: game.getMaxHealth()
+      maxHealth: game.getMaxHealth(),
+      isResting: game.isResting(),
+      restDaysRemaining: game.getRestDaysRemaining(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to create game' })
@@ -131,13 +135,17 @@ app.get('/api/game/:sessionId', (req, res) => {
       npcs: game.getNPCsByTribe(player.tribe),
       worldState: game.getWorldState(),
       day: game.getDay(),
-      stamina: game.getCurrentStamina(),
-      maxStamina: game.getMaxStamina()
-    })
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get game state' })
-  }
-})
+        stamina: game.getCurrentStamina(),
+        maxStamina: game.getMaxStamina(),
+        health: game.getHealth(),
+        maxHealth: game.getMaxHealth(),
+        bag: game.getBag(),
+        equipment: game.getEquipment()
+      })
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get game state' })
+    }
+  })
 
 // Execute action
 app.post('/api/game/:sessionId/action', (req, res) => {
@@ -170,7 +178,11 @@ app.post('/api/game/:sessionId/action', (req, res) => {
       stamina: game.getCurrentStamina(),
       maxStamina: game.getMaxStamina(),
       health: game.getHealth(),
-      maxHealth: game.getMaxHealth()
+      maxHealth: game.getMaxHealth(),
+      isResting: game.isResting(),
+      restDaysRemaining: game.getRestDaysRemaining(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to execute action' })
@@ -196,10 +208,88 @@ app.post('/api/game/:sessionId/end-day', (req, res) => {
       worldState: game.getWorldState(),
       day: game.getDay(),
       stamina: game.getCurrentStamina(),
-      maxStamina: game.getMaxStamina()
+      maxStamina: game.getMaxStamina(),
+      health: game.getHealth(),
+      maxHealth: game.getMaxHealth(),
+      isResting: game.isResting(),
+      restDaysRemaining: game.getRestDaysRemaining(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to end day' })
+  }
+})
+
+// Equip item
+app.post('/api/game/:sessionId/equip', (req, res) => {
+  try {
+    const { sessionId } = req.params
+    const { itemId, slot } = req.body
+    const game = gameSessions.get(sessionId)
+    
+    if (!game) {
+      return res.status(404).json({ error: 'Game session not found' })
+    }
+    
+    const result = game.equipItem(itemId, slot)
+    res.json({
+      result,
+      player: game.getPlayer(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to equip item' })
+  }
+})
+
+// Unequip item
+app.post('/api/game/:sessionId/unequip', (req, res) => {
+  try {
+    const { sessionId } = req.params
+    const { slot } = req.body
+    const game = gameSessions.get(sessionId)
+    
+    if (!game) {
+      return res.status(404).json({ error: 'Game session not found' })
+    }
+    
+    const result = game.unequipItem(slot)
+    res.json({
+      result,
+      player: game.getPlayer(),
+      bag: game.getBag(),
+      equipment: game.getEquipment()
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to unequip item' })
+  }
+})
+
+// Consume item
+app.post('/api/game/:sessionId/consume', (req, res) => {
+  try {
+    const { sessionId } = req.params
+    const { itemId } = req.body
+    const game = gameSessions.get(sessionId)
+    
+    if (!game) {
+      return res.status(404).json({ error: 'Game session not found' })
+    }
+    
+    const result = game.consumeItem(itemId)
+    res.json({
+      result,
+      player: game.getPlayer(),
+      bag: game.getBag(),
+      health: game.getHealth(),
+      maxHealth: game.getMaxHealth(),
+      stamina: game.getCurrentStamina(),
+      maxStamina: game.getMaxStamina()
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to consume item' })
   }
 })
 
@@ -317,6 +407,8 @@ app.post('/api/saves/:userId/slot/:slotNumber/load', async (req, res) => {
       maxStamina: game.getMaxStamina(),
       health: game.getHealth(),
       maxHealth: game.getMaxHealth(),
+      isResting: game.isResting(),
+      restDaysRemaining: game.getRestDaysRemaining(),
       metadata
     })
   } catch (error) {
@@ -467,19 +559,23 @@ app.put('/api/npcs/:sessionId/:npcId', (req, res) => {
     if (updates.name !== undefined) npc.name = updates.name
     if (updates.role !== undefined) npc.role = updates.role
     if (updates.disposition !== undefined) npc.disposition = updates.disposition
-    if (updates.relationship !== undefined) npc.relationship = Math.max(0, Math.min(100, updates.relationship))
+    // Relationships are stored in player.relationships, not on NPC
+    // This update is ignored for now
     if (updates.growth_path !== undefined) npc.growth_path = updates.growth_path
     if (updates.level !== undefined) npc.level = Math.max(1, updates.level)
     if (updates.xp !== undefined) npc.xp = Math.max(0, updates.xp)
     if (updates.stats) {
-      if (!npc.stats) npc.stats = { str: 3, dex: 3, wis: 3, cha: 3, luck: 3 }
+      if (!npc.stats) npc.stats = { str: 3, dex: 3, wis: 3, cha: 3 }
       if (updates.stats.str !== undefined) npc.stats.str = Math.max(1, updates.stats.str)
       if (updates.stats.dex !== undefined) npc.stats.dex = Math.max(1, updates.stats.dex)
       if (updates.stats.wis !== undefined) npc.stats.wis = Math.max(1, updates.stats.wis)
       if (updates.stats.cha !== undefined) npc.stats.cha = Math.max(1, updates.stats.cha)
-      if (updates.stats.luck !== undefined) npc.stats.luck = Math.max(1, updates.stats.luck)
+      if (updates.stats.luck !== undefined && npc.stats.luck !== undefined) {
+        npc.stats.luck = Math.max(1, updates.stats.luck)
+      }
     }
     if (updates.flags) {
+      if (!npc.flags) npc.flags = {};
       Object.assign(npc.flags, updates.flags)
     }
     

@@ -31,7 +31,7 @@ export class EventManager {
 
   checkActionEvent(actionType: string): Event | null {
     const actionEvents = Array.from(this.events.values())
-      .filter(e => e.type === "action" && e.condition?.includes(actionType));
+      .filter(e => e.type === "action" && (e.conditions?.tribe || '').includes(actionType));
     
     if (actionEvents.length > 0 && Math.random() < 0.15) {
       const event = actionEvents[Math.floor(Math.random() * actionEvents.length)];
@@ -43,7 +43,7 @@ export class EventManager {
   checkNPCEvent(npcId: string, relationship: number): Event | null {
     if (relationship >= 70 && Math.random() < 0.2) {
       const npcEvents = Array.from(this.events.values())
-        .filter(e => e.type === "npc" && e.condition?.includes(npcId));
+        .filter(e => e.type === "npc" && (e.conditions?.tribe || '').includes(npcId));
       
       if (npcEvents.length > 0) {
         return npcEvents[Math.floor(Math.random() * npcEvents.length)];
@@ -57,7 +57,7 @@ export class EventManager {
       .filter(e => e.type === "tribe_milestone" && !this.triggeredEvents.has(e.id));
     
     for (const event of milestoneEvents) {
-      if (this.evaluateCondition(event.condition || "", tribe)) {
+      if (this.evaluateCondition(event.conditions?.tribe || "", tribe)) {
         this.triggeredEvents.add(event.id);
         return event;
       }
@@ -79,7 +79,7 @@ export class EventManager {
     const [obj, prop] = resourcePath.split('.');
     if (obj !== 'tribe') return false;
 
-    let actualValue: number;
+    let actualValue: number | undefined;
     if (prop in tribe.resources) {
       actualValue = tribe.resources[prop as keyof typeof tribe.resources];
     } else if (prop in tribe.attributes) {
@@ -87,6 +87,8 @@ export class EventManager {
     } else {
       return false;
     }
+
+    if (actualValue === undefined) return false;
 
     switch (operator) {
       case '>': return actualValue > value;
