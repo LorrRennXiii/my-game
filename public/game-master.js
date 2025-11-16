@@ -62,27 +62,64 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
     });
 });
 
-function loadPermanentConfig() {
+async function loadPermanentConfig() {
     try {
-        const savedConfig = localStorage.getItem('gameMasterConfig');
-        if (savedConfig) {
-            currentConfig = JSON.parse(savedConfig);
-            populateForm(currentConfig);
-            updateDifficultyButton(currentConfig.difficulty || 'Custom');
-            showMessage('✅ Permanent configuration loaded!', 'success');
+        const response = await fetch('/api/database/config');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.config) {
+                currentConfig = data.config;
+                populateForm(currentConfig);
+                updateDifficultyButton(currentConfig.difficulty || 'Custom');
+                showMessage('✅ Permanent configuration loaded from database!', 'success');
+            } else {
+                // Load default config
+                const defaultConfig = getDefaultConfig();
+                currentConfig = defaultConfig;
+                populateForm(defaultConfig);
+                updateDifficultyButton('Normal');
+                showMessage('ℹ️ Using default configuration. Settings will be saved permanently when you click "Save Permanent Config".', 'info');
+            }
         } else {
-            // Load default config
+            // Fallback to localStorage if database is not available
+            const savedConfig = localStorage.getItem('gameMasterConfig');
+            if (savedConfig) {
+                currentConfig = JSON.parse(savedConfig);
+                populateForm(currentConfig);
+                updateDifficultyButton(currentConfig.difficulty || 'Custom');
+                showMessage('✅ Permanent configuration loaded from localStorage (database unavailable)', 'success');
+            } else {
+                // Load default config
+                const defaultConfig = getDefaultConfig();
+                currentConfig = defaultConfig;
+                populateForm(defaultConfig);
+                updateDifficultyButton('Normal');
+                showMessage('ℹ️ Using default configuration. Settings will be saved permanently when you click "Save Permanent Config".', 'info');
+            }
+        }
+    } catch (error) {
+        // Fallback to localStorage on error
+        try {
+            const savedConfig = localStorage.getItem('gameMasterConfig');
+            if (savedConfig) {
+                currentConfig = JSON.parse(savedConfig);
+                populateForm(currentConfig);
+                updateDifficultyButton(currentConfig.difficulty || 'Custom');
+                showMessage('✅ Permanent configuration loaded from localStorage (database error)', 'success');
+            } else {
+                // Load default config
+                const defaultConfig = getDefaultConfig();
+                currentConfig = defaultConfig;
+                populateForm(defaultConfig);
+                updateDifficultyButton('Normal');
+                showMessage('ℹ️ Using default configuration. Settings will be saved permanently when you click "Save Permanent Config".', 'info');
+            }
+        } catch (localError) {
+            showMessage('Error loading permanent config: ' + error.message, 'error');
             const defaultConfig = getDefaultConfig();
             currentConfig = defaultConfig;
             populateForm(defaultConfig);
-            updateDifficultyButton('Normal');
-            showMessage('ℹ️ Using default configuration. Settings will be saved permanently when you click "Save Permanent Config".', 'info');
         }
-    } catch (error) {
-        showMessage('Error loading permanent config: ' + error.message, 'error');
-        const defaultConfig = getDefaultConfig();
-        currentConfig = defaultConfig;
-        populateForm(defaultConfig);
     }
 }
 
@@ -189,15 +226,38 @@ function getFormData() {
     };
 }
 
-function savePermanentConfig() {
+async function savePermanentConfig() {
     try {
         const config = getFormData();
         currentConfig = config;
-        localStorage.setItem('gameMasterConfig', JSON.stringify(config));
-        updateDifficultyButton('Custom');
-        showMessage('✅ Configuration saved permanently! This will apply to all new games.', 'success');
+        
+        // Try to save to database first
+        const response = await fetch('/api/database/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config })
+        });
+        
+        if (response.ok) {
+            // Also save to localStorage as backup
+            localStorage.setItem('gameMasterConfig', JSON.stringify(config));
+            updateDifficultyButton('Custom');
+            showMessage('✅ Configuration saved to database! This will apply to all new games.', 'success');
+        } else {
+            // Fallback to localStorage if database fails
+            localStorage.setItem('gameMasterConfig', JSON.stringify(config));
+            updateDifficultyButton('Custom');
+            showMessage('✅ Configuration saved to localStorage (database unavailable)', 'success');
+        }
     } catch (error) {
-        showMessage('Error saving config: ' + error.message, 'error');
+        // Fallback to localStorage on error
+        try {
+            localStorage.setItem('gameMasterConfig', JSON.stringify(currentConfig));
+            updateDifficultyButton('Custom');
+            showMessage('✅ Configuration saved to localStorage (database error)', 'success');
+        } catch (localError) {
+            showMessage('Error saving config: ' + error.message, 'error');
+        }
     }
 }
 
@@ -264,13 +324,31 @@ async function setDifficulty(difficulty) {
     }
 }
 
-function resetPermanentConfig() {
+async function resetPermanentConfig() {
     const defaultConfig = getDefaultConfig();
     currentConfig = defaultConfig;
     populateForm(defaultConfig);
     updateDifficultyButton('Normal');
-    localStorage.removeItem('gameMasterConfig');
-    showMessage('✅ Configuration reset to defaults!', 'success');
+    
+    // Try to save defaults to database
+    try {
+        const response = await fetch('/api/database/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: defaultConfig })
+        });
+        
+        if (response.ok) {
+            localStorage.removeItem('gameMasterConfig');
+            showMessage('✅ Configuration reset to defaults in database!', 'success');
+        } else {
+            localStorage.removeItem('gameMasterConfig');
+            showMessage('✅ Configuration reset to defaults (database unavailable)', 'success');
+        }
+    } catch (error) {
+        localStorage.removeItem('gameMasterConfig');
+        showMessage('✅ Configuration reset to defaults (database error)', 'success');
+    }
 }
 
 function updateDifficultyButton(difficulty) {

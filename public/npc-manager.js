@@ -86,25 +86,54 @@ async function loadBaseNPCs() {
     }
 }
 
-function loadPermanentNPCs() {
+async function loadPermanentNPCs() {
     try {
-        const savedNPCs = localStorage.getItem('permanentNPCs');
-        if (savedNPCs) {
-            permanentNPCs = JSON.parse(savedNPCs);
-            currentNPCs = JSON.parse(JSON.stringify(permanentNPCs)); // Deep copy
-            renderNPCs();
-            showMessage(`✅ Loaded ${currentNPCs.length} permanent NPCs`, 'success');
+        const response = await fetch('/api/database/npcs');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.npcs && data.npcs.length > 0) {
+                permanentNPCs = data.npcs;
+                currentNPCs = JSON.parse(JSON.stringify(permanentNPCs)); // Deep copy
+                renderNPCs();
+                showMessage(`✅ Loaded ${currentNPCs.length} permanent NPCs from database`, 'success');
+            } else {
+                loadBaseNPCs();
+                showMessage('ℹ️ No permanent NPCs saved in database. Loaded base NPCs. Edit and save to make permanent.', 'info');
+            }
         } else {
-            loadBaseNPCs();
-            showMessage('ℹ️ No permanent NPCs saved. Loaded base NPCs. Edit and save to make permanent.', 'info');
+            // Fallback to localStorage if database is not available
+            const savedNPCs = localStorage.getItem('permanentNPCs');
+            if (savedNPCs) {
+                permanentNPCs = JSON.parse(savedNPCs);
+                currentNPCs = JSON.parse(JSON.stringify(permanentNPCs)); // Deep copy
+                renderNPCs();
+                showMessage(`✅ Loaded ${currentNPCs.length} permanent NPCs from localStorage (database unavailable)`, 'success');
+            } else {
+                loadBaseNPCs();
+                showMessage('ℹ️ No permanent NPCs saved. Loaded base NPCs. Edit and save to make permanent.', 'info');
+            }
         }
     } catch (error) {
-        showMessage('Error loading permanent NPCs: ' + error.message, 'error');
-        loadBaseNPCs();
+        // Fallback to localStorage on error
+        try {
+            const savedNPCs = localStorage.getItem('permanentNPCs');
+            if (savedNPCs) {
+                permanentNPCs = JSON.parse(savedNPCs);
+                currentNPCs = JSON.parse(JSON.stringify(permanentNPCs)); // Deep copy
+                renderNPCs();
+                showMessage(`✅ Loaded ${currentNPCs.length} permanent NPCs from localStorage (database error)`, 'success');
+            } else {
+                loadBaseNPCs();
+                showMessage('ℹ️ No permanent NPCs saved. Loaded base NPCs. Edit and save to make permanent.', 'info');
+            }
+        } catch (localError) {
+            showMessage('Error loading permanent NPCs: ' + error.message, 'error');
+            loadBaseNPCs();
+        }
     }
 }
 
-function savePermanentNPCs() {
+async function savePermanentNPCs() {
     try {
         if (currentNPCs.length === 0) {
             showMessage('No NPCs to save', 'error');
@@ -112,10 +141,31 @@ function savePermanentNPCs() {
         }
         
         permanentNPCs = JSON.parse(JSON.stringify(currentNPCs)); // Deep copy
-        localStorage.setItem('permanentNPCs', JSON.stringify(permanentNPCs));
-        showMessage(`✅ Saved ${currentNPCs.length} NPCs permanently! This will apply to all new games.`, 'success');
+        
+        // Try to save to database first
+        const response = await fetch('/api/database/npcs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ npcs: permanentNPCs })
+        });
+        
+        if (response.ok) {
+            // Also save to localStorage as backup
+            localStorage.setItem('permanentNPCs', JSON.stringify(permanentNPCs));
+            showMessage(`✅ Saved ${permanentNPCs.length} NPCs to database! This will apply to all new games.`, 'success');
+        } else {
+            // Fallback to localStorage if database fails
+            localStorage.setItem('permanentNPCs', JSON.stringify(permanentNPCs));
+            showMessage(`✅ Saved ${permanentNPCs.length} NPCs to localStorage (database unavailable)`, 'success');
+        }
     } catch (error) {
-        showMessage('Error saving permanent NPCs: ' + error.message, 'error');
+        // Fallback to localStorage on error
+        try {
+            localStorage.setItem('permanentNPCs', JSON.stringify(permanentNPCs));
+            showMessage(`✅ Saved ${permanentNPCs.length} NPCs to localStorage (database error)`, 'success');
+        } catch (localError) {
+            showMessage('Error saving permanent NPCs: ' + error.message, 'error');
+        }
     }
 }
 

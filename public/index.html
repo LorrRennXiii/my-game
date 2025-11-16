@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Three Tribes Chronicle</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="game-graphics.css">
 </head>
 <body>
     <div id="app">
         <!-- Start Screen -->
-        <div id="start-screen" class="screen active">
+        <div id="start-screen" class="screen">
             <div class="container">
                 <h1 class="title">🌍 Three Tribes Chronicle</h1>
                 <p class="subtitle">A text-driven RPG with tribal simulation</p>
@@ -119,30 +120,34 @@
                                 <div class="actions-section">
                                     <h2>📋 Actions</h2>
                                     <div class="actions-grid-compact">
-                                        <button class="action-btn-compact" data-action="farm" title="Farm - Cost: 1 Stamina">
+                                        <button class="action-btn-compact" data-action="farm" data-stamina="1" title="Farm - Cost: 1 Stamina">
                                             <span class="icon">🌾</span>
                                             <span class="label">Farm</span>
+                                            <span class="stamina-cost">⚡1</span>
                                         </button>
-                                        <button class="action-btn-compact" data-action="gather" title="Gather - Cost: 1 Stamina">
+                                        <button class="action-btn-compact" data-action="gather" data-stamina="1" title="Gather - Cost: 1 Stamina">
                                             <span class="icon">🌿</span>
                                             <span class="label">Gather</span>
+                                            <span class="stamina-cost">⚡1</span>
                                         </button>
-                                        <button class="action-btn-compact" data-action="trade" title="Trade - Cost: 1 Stamina">
+                                        <button class="action-btn-compact" data-action="trade" data-stamina="1" title="Trade - Cost: 1 Stamina">
                                             <span class="icon">💰</span>
                                             <span class="label">Trade</span>
+                                            <span class="stamina-cost">⚡1</span>
                                         </button>
-                                        <button class="action-btn-compact" data-action="hunt" title="Hunt - Cost: 2 Stamina">
+                                        <button class="action-btn-compact" data-action="hunt" data-stamina="2" title="Hunt - Cost: 2 Stamina">
                                             <span class="icon">🏹</span>
                                             <span class="label">Hunt</span>
+                                            <span class="stamina-cost">⚡2</span>
                                         </button>
-                                        <button class="action-btn-compact" data-action="explore" title="Explore - Cost: 2 Stamina">
+                                        <button class="action-btn-compact" data-action="explore" data-stamina="2" title="Explore - Cost: 2 Stamina">
                                             <span class="icon">🗺️</span>
                                             <span class="label">Explore</span>
+                                            <span class="stamina-cost">⚡2</span>
                                         </button>
                                     </div>
                                     <div class="action-buttons-compact">
                                         <button id="end-day-btn" class="btn btn-primary btn-compact">🌙 End Day</button>
-                                        <button id="save-game-btn" class="btn btn-secondary btn-compact">💾 Save</button>
                                     </div>
                                 </div>
                             </section>
@@ -271,7 +276,22 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
-</body>
+        <!-- Save Slots Modal -->
+        <div id="save-slots-modal" class="modal">
+            <div class="modal-content save-slots-modal-content">
+                <div class="modal-header">
+                    <h2>💾 Save Slots</h2>
+                    <button class="modal-close" onclick="saveManager.hideModal()">×</button>
+                </div>
+                <div id="save-slots-container" class="save-slots-container">
+                    <!-- Save slots will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <script src="map-renderer.js"></script>
+        <script src="save-manager.js"></script>
+        <script src="app.js"></script>
+    </body>
 </html>
 

@@ -4,4 +4,6 @@ dist/
 .DS_Store
 saves/
 *.tsbuildinfo
+.env
+.env.local
 

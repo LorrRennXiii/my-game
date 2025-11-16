@@ -3,7 +3,7 @@ import { TribeManager } from './core/tribe.js'
 import { NPCManager } from './core/npc.js'
 import { EventManager } from './core/events.js'
 import { ActionManager } from './core/actions.js'
-import { SaveManager } from './core/saveLoad.js'
+import { SaveManager, type SaveData } from './core/saveLoad.js'
 import { WorldManager, type WorldState } from './core/world.js'
 import { EncounterManager, type EncounterEvent } from './core/encounters.js'
 import { GameConfigManager, type GameConfig } from './core/gameConfig.js'
@@ -278,6 +278,10 @@ export class GameLoop {
     return this.npcManager.getAllNPCs()
   }
 
+  getGameConfig(): GameConfig {
+    return this.configManager.getConfig()
+  }
+
   getNPCsByTribe(tribe: string): NPC[] {
     return this.npcManager.getNPCsByTribe(tribe)
   }
@@ -325,23 +329,60 @@ export class GameLoop {
       const player = this.playerManager.getPlayer()
       const tribe = this.tribeManager.getTribe()
       const npcs = this.npcManager.getAllNPCs()
+      const worldState = this.worldManager.getWorldState()
+      const gameConfig = this.configManager.getConfig()
 
       // Validate data before saving
       if (!player || !tribe || !npcs) {
         throw new Error('Missing game data: player, tribe, or npcs is undefined')
       }
 
-      return await this.saveManager.saveGame(player, tribe, npcs, this.day)
+      return await this.saveManager.saveGame(
+        player,
+        tribe,
+        npcs,
+        this.day,
+        worldState,
+        Object.fromEntries(this.lastNPCEncounters),
+        gameConfig
+      )
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`GameLoop.saveGame failed: ${errorMessage}`)
     }
   }
 
+  getSaveData(): SaveData {
+    const player = this.playerManager.getPlayer()
+    const tribe = this.tribeManager.getTribe()
+    const npcs = this.npcManager.getAllNPCs()
+    const worldState = this.worldManager.getWorldState()
+    const gameConfig = this.configManager.getConfig()
+
+    return {
+      player,
+      tribe,
+      npcs,
+      day: this.day,
+      timestamp: Date.now(),
+      worldState,
+      lastNPCEncounters: Object.fromEntries(this.lastNPCEncounters),
+      gameConfig
+    }
+  }
+
   async loadGame(filepath: string): Promise<void> {
     try {
       const saveData = await this.saveManager.loadGame(filepath)
+      await this.loadGameFromData(saveData)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to load game: ${errorMessage}`)
+    }
+  }
 
+  async loadGameFromData(saveData: SaveData): Promise<void> {
+    try {
       // Validate save data
       if (!saveData.player) {
         throw new Error('Save file is missing player data')
@@ -367,7 +408,7 @@ export class GameLoop {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      throw new Error(`Failed to load game: ${errorMessage}`)
+      throw new Error(`Failed to load game data: ${errorMessage}`)
     }
   }
 
@@ -407,10 +448,6 @@ export class GameLoop {
     
     const daysSince = this.worldManager.getDaysSinceEncounter(npcId, this.day)
     return this.encounterManager.getAvailableEncounters(npc, player, worldState, daysSince)
-  }
-
-  getGameConfig(): GameConfig {
-    return this.configManager.getConfig()
   }
 
   updateGameConfig(updates: Partial<GameConfig>): void {

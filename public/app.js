@@ -1,6 +1,7 @@
 // Game State
 let sessionId = null;
 let gameState = null;
+let currentCombatAnimal = null; // Track active combat encounter
 
 // API Base URL
 const API_BASE = "";
@@ -13,8 +14,26 @@ const npcModal = document.getElementById("npc-modal");
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
+  // Mark app as initialized to allow screens to show
+  document.getElementById("app").classList.add("initialized");
+
   setupEventListeners();
+  // Hide all screens initially to prevent flashing
+  startScreen.classList.remove("active");
+  loadScreen.classList.remove("active");
+  gameScreen.classList.remove("active");
+  // Check for saved session and show appropriate screen
   checkForSavedSession();
+
+  // Auto-save on page unload
+  window.addEventListener("beforeunload", () => {
+    if (typeof saveManager !== "undefined" && saveManager && sessionId) {
+      // Use sendBeacon for reliable save on page close
+      saveManager.autoSave().catch(() => {
+        // Ignore errors on unload
+      });
+    }
+  });
 });
 
 function setupEventListeners() {
@@ -29,20 +48,26 @@ function setupEventListeners() {
     .getElementById("back-to-start")
     .addEventListener("click", showStartScreen);
 
-  // Game actions
-  document.querySelectorAll(".action-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const action = btn.dataset.action;
+  // Game actions - use event delegation to handle dynamically created buttons
+  document.addEventListener("click", (e) => {
+    const actionBtn = e.target.closest(".action-btn-compact, .action-btn");
+    if (actionBtn && actionBtn.dataset.action) {
+      // Don't allow actions if there's an active encounter
+      if (typeof currentCombatAnimal !== "undefined" && currentCombatAnimal) {
+        addMessage("⚠️ You must decide: Fight or Flee!", "error");
+        return;
+      }
+
+      const action = actionBtn.dataset.action;
       if (action === "visit") {
         showNPCModal();
       } else {
         executeAction(action);
       }
-    });
+    }
   });
 
   document.getElementById("end-day-btn").addEventListener("click", endDay);
-  document.getElementById("save-game-btn").addEventListener("click", saveGame);
 
   // Refresh map button removed to save space - map auto-refreshes on actions
 
@@ -89,7 +114,23 @@ function checkForSavedSession() {
   const saved = localStorage.getItem("gameSessionId");
   if (saved) {
     sessionId = saved;
+    // Initialize save manager
+    if (typeof saveManager !== "undefined") {
+      saveManager.initialize(sessionId, {
+        sessionId: sessionId,
+        gameState: gameState,
+        addMessage: addMessage,
+        updateUI: updateUI,
+        showGameScreen: showGameScreen,
+        getPermanentConfig: getPermanentConfig,
+        getPermanentNPCs: getPermanentNPCs,
+      });
+      saveManager.startAutoSave();
+    }
     loadGameState();
+  } else {
+    // No saved session, show start screen
+    showStartScreen();
   }
 }
 
@@ -115,6 +156,12 @@ async function startNewGame() {
     localStorage.setItem("gameSessionId", sessionId);
     gameState = data;
 
+    // Initialize save manager with session ID
+    if (typeof saveManager !== "undefined") {
+      saveManager.initialize(sessionId);
+      saveManager.startAutoSave();
+    }
+
     showGameScreen();
     updateUI();
     addMessage("✅ New game started!", "success");
@@ -130,7 +177,10 @@ async function startNewGame() {
 }
 
 async function loadGameState() {
-  if (!sessionId) return;
+  if (!sessionId) {
+    showStartScreen();
+    return;
+  }
 
   try {
     const response = await fetch(`${API_BASE}/api/game/${sessionId}`);
@@ -138,6 +188,7 @@ async function loadGameState() {
       if (response.status === 404) {
         localStorage.removeItem("gameSessionId");
         sessionId = null;
+        showStartScreen();
         return;
       }
       throw new Error("Failed to load game");
@@ -148,6 +199,8 @@ async function loadGameState() {
     updateUI();
   } catch (error) {
     console.error("Error loading game:", error);
+    // On error, show start screen
+    showStartScreen();
   }
 }
 
@@ -227,18 +280,23 @@ async function executeAction(action, npcId = null, combatDecision = null) {
         data.result.exploreEncounter.animal,
         gameState.player
       );
+      // Disable all action buttons until player decides
+      disableAllActionButtons();
       // Don't update UI yet - wait for player decision
-      if (actionBtn) actionBtn.disabled = false;
       return;
     } else {
       // Hide encounter window if no encounter
       hideEncounterWindow();
+      // Re-enable action buttons
+      enableAllActionButtons();
     }
 
     // Show combat result if any
     if (data.result.combatResult) {
       const combat = data.result.combatResult;
       updateEncounterWindowWithResult(combat);
+      // Re-enable action buttons after combat is resolved
+      enableAllActionButtons();
       const combatMessage = document.getElementById("combat-message");
 
       // Update player health bar in combat window
@@ -324,15 +382,37 @@ async function executeAction(action, npcId = null, combatDecision = null) {
     }
 
     updateUI();
+
+    // Auto-save after action (silent - no message)
+    if (typeof saveManager !== "undefined" && saveManager && sessionId) {
+      saveManager.autoSave().catch((err) => {
+        console.error("Auto-save failed:", err);
+      });
+    }
   } catch (error) {
     addMessage("Error: " + error.message, "error");
+    // Re-enable buttons on error (unless there's an active encounter)
+    if (typeof currentCombatAnimal === "undefined" || !currentCombatAnimal) {
+      enableAllActionButtons();
+    }
   } finally {
-    if (actionBtn) actionBtn.disabled = false;
+    // Don't re-enable if there's an active encounter waiting for decision
+    if (
+      (typeof currentCombatAnimal === "undefined" || !currentCombatAnimal) &&
+      actionBtn
+    ) {
+      enableAllActionButtons();
+    }
   }
 }
 
 async function endDay() {
   if (!sessionId) return;
+
+  // Auto-save before ending day
+  if (typeof saveManager !== "undefined" && saveManager) {
+    await saveManager.autoSave();
+  }
 
   try {
     const response = await fetch(`${API_BASE}/api/game/${sessionId}/end-day`, {
@@ -361,22 +441,12 @@ async function endDay() {
   }
 }
 
-async function saveGame() {
-  if (!sessionId) return;
-
-  try {
-    const response = await fetch(`${API_BASE}/api/game/${sessionId}/save`, {
-      method: "POST",
-    });
-
-    if (!response.ok) throw new Error("Failed to save game");
-
-    const data = await response.json();
-    addMessage("✅ Game saved successfully!", "success");
-  } catch (error) {
-    addMessage("Error saving: " + error.message, "error");
-  }
-}
+// Manual save function removed - game now auto-saves all progress
+// Auto-save happens:
+// - Every 5 minutes during gameplay
+// - Before ending each day
+// - After each action (silent save)
+// - On page unload
 
 async function showLoadScreen() {
   try {
@@ -429,6 +499,12 @@ async function loadGame(filepath) {
     sessionId = data.sessionId;
     localStorage.setItem("gameSessionId", sessionId);
     gameState = data;
+
+    // Initialize save manager with session ID
+    if (typeof saveManager !== "undefined") {
+      saveManager.initialize(sessionId);
+      saveManager.startAutoSave();
+    }
 
     showGameScreen();
     updateUI();
@@ -578,63 +654,70 @@ function updateUI() {
         `;
   }
 
-  // Update NPCs
+  // Update NPCs (only show encountered NPCs)
   if (gameState.npcs) {
     const npcsList = document.getElementById("npcs-list");
     npcsList.innerHTML = "";
 
-    gameState.npcs.forEach((npc) => {
-      const relationship = gameState.player.relationships[npc.id] || 50;
-      let relationshipClass = "relationship-neutral";
-      let relationshipText = "Neutral";
+    // Filter to only show NPCs that have been encountered
+    const encounteredNPCs = gameState.npcs.filter(
+      (npc) => npc.encountered || npc.flags?.met
+    );
 
-      if (relationship < 20) {
-        relationshipClass = "relationship-hostile";
-        relationshipText = "Hostile";
-      } else if (relationship < 50) {
-        relationshipClass = "relationship-neutral";
-        relationshipText = "Neutral";
-      } else if (relationship < 80) {
-        relationshipClass = "relationship-friendly";
-        relationshipText = "Friendly";
-      } else {
-        relationshipClass = "relationship-ally";
-        relationshipText = "Ally";
-      }
+    if (encounteredNPCs.length === 0) {
+      npcsList.innerHTML =
+        '<p style="color: var(--text-secondary); font-style: italic;">No tribal members encountered yet. Visit NPCs to meet them!</p>';
+    } else {
+      encounteredNPCs.forEach((npc) => {
+        const relationship = gameState.player.relationships[npc.id] || 50;
+        let relationshipClass = "relationship-neutral";
+        let relationshipText = "Neutral";
 
-      const npcItem = document.createElement("div");
-      npcItem.className = "npc-item";
-      npcItem.innerHTML = `
-                <h3>${npc.name} (${npc.role})</h3>
-                <div class="npc-stats">
-                    <span>Level ${npc.level || 1}</span>
-                    ${
-                      npc.stats
-                        ? `
-                        <span>STR:${npc.stats.str}</span>
-                        <span>DEX:${npc.stats.dex}</span>
-                        <span>WIS:${npc.stats.wis}</span>
-                        <span>CHA:${npc.stats.cha}</span>
-                    `
-                        : ""
-                    }
-                </div>
-                <span class="relationship-badge ${relationshipClass}">
-                    ${relationshipText} (${relationship})
-                </span>
-            `;
-      npcsList.appendChild(npcItem);
-    });
+        if (relationship < 20) {
+          relationshipClass = "relationship-hostile";
+          relationshipText = "Hostile";
+        } else if (relationship < 50) {
+          relationshipClass = "relationship-neutral";
+          relationshipText = "Neutral";
+        } else if (relationship < 80) {
+          relationshipClass = "relationship-friendly";
+          relationshipText = "Friendly";
+        } else {
+          relationshipClass = "relationship-ally";
+          relationshipText = "Ally";
+        }
+
+        const npcItem = document.createElement("div");
+        npcItem.className = "npc-item";
+        npcItem.innerHTML = `
+                  <h3>${npc.name} (${npc.role})</h3>
+                  <div class="npc-stats">
+                      <span>Level ${npc.level || 1}</span>
+                      ${
+                        npc.stats
+                          ? `
+                          <span>STR:${npc.stats.str}</span>
+                          <span>DEX:${npc.stats.dex}</span>
+                          <span>WIS:${npc.stats.wis}</span>
+                          <span>CHA:${npc.stats.cha}</span>
+                      `
+                          : ""
+                      }
+                  </div>
+                  <span class="relationship-badge ${relationshipClass}">
+                      ${relationshipText} (${relationship})
+                  </span>
+              `;
+        npcsList.appendChild(npcItem);
+      });
+    }
   }
 
   // Render map
   renderMap();
 
-  // Update action buttons based on stamina
-  const stamina = gameState.stamina || 0;
-  document.querySelectorAll(".action-btn").forEach((btn) => {
-    btn.disabled = stamina <= 0;
-  });
+  // Update action buttons based on stamina (respects encounter state)
+  enableAllActionButtons();
 }
 
 function showNPCModal() {
@@ -646,7 +729,19 @@ function showNPCModal() {
   const npcSelection = document.getElementById("npc-selection");
   npcSelection.innerHTML = "";
 
-  gameState.npcs.forEach((npc) => {
+  // Filter to only show NPCs that have been encountered
+  const encounteredNPCs = gameState.npcs.filter(
+    (npc) => npc.encountered || npc.flags?.met
+  );
+
+  if (encounteredNPCs.length === 0) {
+    npcSelection.innerHTML =
+      '<p style="color: var(--text-secondary); padding: 20px; text-align: center;">No NPCs encountered yet. Explore the world to meet tribal members!</p>';
+    npcModal.classList.add("active");
+    return;
+  }
+
+  encounteredNPCs.forEach((npc) => {
     const btn = document.createElement("button");
     btn.className = "npc-select-btn";
     const relationship = gameState.player.relationships[npc.id] || 50;
@@ -677,80 +772,19 @@ function addMessage(text, type = "info") {
 }
 
 // Map rendering functions
+let mapRenderer = null;
+
 function renderMap() {
   const mapCanvas = document.getElementById("map-canvas");
   if (!mapCanvas || !gameState) return;
 
-  mapCanvas.innerHTML = "";
-
-  // Add location labels
-  const locations = [
-    { name: "Stonefang Village", x: "50%", y: "40%", left: true },
-  ];
-
-  locations.forEach((loc) => {
-    const locationEl = document.createElement("div");
-    locationEl.className = "map-location";
-    locationEl.textContent = loc.name;
-    locationEl.style.left = loc.x;
-    locationEl.style.top = loc.y;
-    if (loc.left) locationEl.style.transform = "translateX(-50%)";
-    mapCanvas.appendChild(locationEl);
-  });
-
-  // Render NPCs
-  if (gameState.npcs) {
-    const encounteredNPCs = gameState.npcs.filter(
-      (npc) => npc.encountered || npc.flags?.met
-    );
-
-    encounteredNPCs.forEach((npc) => {
-      if (!npc.location) return;
-
-      const marker = document.createElement("div");
-      marker.className = `npc-marker ${npc.disposition.toLowerCase()}`;
-      marker.style.left = `${npc.location.x}px`;
-      marker.style.top = `${npc.location.y}px`;
-      marker.title = `${npc.name} (${npc.role})`;
-
-      const roleEmoji = getRoleEmoji(npc.role);
-      marker.textContent = roleEmoji;
-
-      // Tooltip
-      const tooltip = document.createElement("div");
-      tooltip.className = "npc-tooltip";
-      const relationship = gameState.player.relationships[npc.id] || 50;
-      tooltip.innerHTML = `
-                <h3>${npc.name}</h3>
-                <p><strong>Role:</strong> ${npc.role}</p>
-                <p><strong>Level:</strong> ${npc.level || 1}</p>
-                <p><strong>Disposition:</strong> ${npc.disposition}</p>
-                <div class="relationship-bar">
-                    <div class="relationship-fill" style="width: ${relationship}%"></div>
-                </div>
-                <p style="margin-top: 6px;"><strong>Relationship:</strong> ${relationship}/100</p>
-            `;
-
-      marker.addEventListener("mouseenter", (e) => {
-        const rect = marker.getBoundingClientRect();
-        const mapRect = mapCanvas.getBoundingClientRect();
-        tooltip.style.left = `${rect.left - mapRect.left + 60}px`;
-        tooltip.style.top = `${rect.top - mapRect.top - 10}px`;
-        tooltip.classList.add("visible");
-      });
-
-      marker.addEventListener("mouseleave", () => {
-        tooltip.classList.remove("visible");
-      });
-
-      marker.addEventListener("click", () => {
-        interactWithNPCFromMap(npc.id);
-      });
-
-      mapCanvas.appendChild(marker);
-      mapCanvas.appendChild(tooltip);
-    });
+  // Initialize map renderer if needed
+  if (!mapRenderer) {
+    mapRenderer = new MapRenderer();
   }
+
+  // Use enhanced map renderer
+  mapRenderer.renderMap(mapCanvas, gameState);
 }
 
 function getRoleEmoji(role) {
@@ -916,6 +950,44 @@ function hideEncounterWindow() {
     encounterWindow.classList.remove("active");
   }
   currentCombatAnimal = null;
+  // Re-enable action buttons when encounter is cleared
+  enableAllActionButtons();
+}
+
+function disableAllActionButtons() {
+  document
+    .querySelectorAll(".action-btn-compact, .action-btn")
+    .forEach((btn) => {
+      btn.disabled = true;
+    });
+}
+
+function enableAllActionButtons() {
+  // Only enable if there's no active encounter
+  if (!currentCombatAnimal) {
+    const stamina = gameState?.stamina || 0;
+    document
+      .querySelectorAll(".action-btn-compact, .action-btn")
+      .forEach((btn) => {
+        const actionBtn = btn;
+        const staminaCost = parseInt(actionBtn.dataset.stamina || "1");
+
+        // Disable if not enough stamina
+        actionBtn.disabled = stamina < staminaCost;
+
+        // Update stamina cost display to show if affordable
+        const staminaCostEl = actionBtn.querySelector(".stamina-cost");
+        if (staminaCostEl) {
+          if (stamina < staminaCost) {
+            staminaCostEl.style.color = "var(--danger-color)";
+            staminaCostEl.style.opacity = "0.6";
+          } else {
+            staminaCostEl.style.color = "#fbbf24";
+            staminaCostEl.style.opacity = "1";
+          }
+        }
+      });
+  }
 }
 
 function updateEncounterWindowWithResult(combatResult) {

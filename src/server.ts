@@ -6,6 +6,7 @@ import { dirname } from 'path'
 import { GameLoop } from './gameLoop.js'
 import { readFileSync } from 'fs'
 import type { NPC, Event } from './types.js'
+import { DatabaseManager } from './core/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -21,6 +22,9 @@ app.use(express.static(path.join(__dirname, '..', 'public')))
 // In-memory game sessions (in production, use Redis or database)
 const gameSessions = new Map<string, GameLoop>()
 
+// Track playtime for each session
+const sessionPlaytime = new Map<string, { startTime: number; totalPlaytime: number }>()
+
 function loadJSON<T>(filename: string): T {
   // Go up from dist/server.js to project root, then into src/data
   const filepath = path.join(__dirname, '..', 'src', 'data', filename)
@@ -31,6 +35,28 @@ function loadJSON<T>(filename: string): T {
 // Initialize game data
 let baseNPCs: NPC[] = loadJSON<NPC[]>('npcs.json')
 const events: Event[] = loadJSON<Event[]>('events.json')
+
+// Initialize database
+const dbManager = new DatabaseManager()
+
+// Initialize save service
+import { SaveService } from './core/saveService.js'
+const saveService = new SaveService()
+
+// Initialize database on startup (with retry logic for Docker)
+dbManager.initialize().catch((error) => {
+  console.error('⚠️ Failed to initialize database. Continuing without database storage:', error.message)
+  console.log('💡 To enable database storage:')
+  console.log('   - Set DATABASE_URL or DB_* environment variables')
+  console.log('   - Or use Docker Compose: docker-compose up')
+  console.log('   - The app will continue with localStorage fallback')
+})
+
+// Initialize save service
+saveService.initialize().catch((error) => {
+  console.error('⚠️ Failed to initialize save service:', error.message)
+  console.log('💡 Save service will fallback to file-based saves')
+})
 
 // Function to get NPCs (with permanent overrides from request)
 function getNPCsForGame(permanentNPCs?: NPC[]): NPC[] {
@@ -126,6 +152,16 @@ app.post('/api/game/:sessionId/action', (req, res) => {
     
     const result = game.executeAction(action, npcId, combatDecision)
     
+    // Update playtime tracking
+    const playtimeData = sessionPlaytime.get(sessionId)
+    if (playtimeData) {
+      const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
+      playtimeData.totalPlaytime += currentSessionTime
+      playtimeData.startTime = Date.now()
+    } else {
+      sessionPlaytime.set(sessionId, { startTime: Date.now(), totalPlaytime: 0 })
+    }
+    
     res.json({
       result,
       player: game.getPlayer(),
@@ -167,7 +203,7 @@ app.post('/api/game/:sessionId/end-day', (req, res) => {
   }
 })
 
-// Save game
+// Save game (legacy file-based - kept for backward compatibility)
 app.post('/api/game/:sessionId/save', async (req, res) => {
   try {
     const { sessionId } = req.params
@@ -182,6 +218,160 @@ app.post('/api/game/:sessionId/save', async (req, res) => {
     res.json({ success: true, filepath })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save game' })
+  }
+})
+
+// New Save System API Endpoints
+
+// Get all save slots for a user
+app.get('/api/saves/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params
+    const slots = await saveService.getSaveSlots(userId)
+    res.json({ slots })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get save slots' })
+  }
+})
+
+// Save game to a specific slot
+app.post('/api/saves/:userId/slot/:slotNumber', async (req, res) => {
+  try {
+    const { userId, slotNumber } = req.params
+    const { saveName, isAutoSave } = req.body
+    
+    const game = gameSessions.get(userId)
+    if (!game) {
+      return res.status(404).json({ error: 'Game session not found' })
+    }
+
+    // Calculate playtime
+    const playtimeData = sessionPlaytime.get(userId) || { startTime: Date.now(), totalPlaytime: 0 }
+    const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
+    const totalPlaytime = playtimeData.totalPlaytime + currentSessionTime
+
+    // Get save data from game
+    const saveData = game.getSaveData()
+
+    const metadata = await saveService.saveGame(
+      userId,
+      parseInt(slotNumber),
+      saveData,
+      saveName,
+      isAutoSave === true,
+      totalPlaytime
+    )
+
+    // Reset session playtime after save
+    sessionPlaytime.set(userId, { startTime: Date.now(), totalPlaytime })
+
+    res.json({ success: true, metadata })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save game' })
+  }
+})
+
+// Load game from a specific slot
+app.post('/api/saves/:userId/slot/:slotNumber/load', async (req, res) => {
+  try {
+    const { userId, slotNumber } = req.params
+    const { permanentConfig, permanentNPCs } = req.body
+
+    const saveData = await saveService.loadGame(userId, parseInt(slotNumber))
+    const metadata = await saveService.getSaveMetadata(userId, parseInt(slotNumber))
+
+    // Create new session
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const gameNPCs = getNPCsForGame(permanentNPCs)
+    const game = new GameLoop(undefined, undefined, gameNPCs, events, undefined, permanentConfig)
+    
+    await game.loadGameFromData(saveData)
+    
+    // Apply permanent config after loading
+    if (permanentConfig) {
+      game.updateGameConfig(permanentConfig)
+    }
+    
+    game.startDay()
+    gameSessions.set(sessionId, game)
+
+    // Restore playtime tracking
+    if (metadata) {
+      sessionPlaytime.set(sessionId, { 
+        startTime: Date.now(), 
+        totalPlaytime: metadata.playtime 
+      })
+    } else {
+      sessionPlaytime.set(sessionId, { startTime: Date.now(), totalPlaytime: 0 })
+    }
+
+    const player = game.getPlayer()
+    res.json({
+      sessionId,
+      player,
+      tribe: game.getTribe(),
+      npcs: game.getNPCsByTribe(player.tribe),
+      worldState: game.getWorldState(),
+      day: game.getDay(),
+      stamina: game.getCurrentStamina(),
+      maxStamina: game.getMaxStamina(),
+      health: game.getHealth(),
+      maxHealth: game.getMaxHealth(),
+      metadata
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load game' })
+  }
+})
+
+// Delete a save slot
+app.delete('/api/saves/:userId/slot/:slotNumber', async (req, res) => {
+  try {
+    const { userId, slotNumber } = req.params
+    await saveService.deleteSave(userId, parseInt(slotNumber))
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to delete save' })
+  }
+})
+
+// Get auto-save
+app.get('/api/saves/:userId/autosave', async (req, res) => {
+  try {
+    const { userId } = req.params
+    const saveData = await saveService.getAutoSave(userId)
+    
+    if (!saveData) {
+      return res.status(404).json({ error: 'No auto-save found' })
+    }
+
+    res.json({ saveData })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get auto-save' })
+  }
+})
+
+// Update playtime
+app.post('/api/saves/:userId/playtime', async (req, res) => {
+  try {
+    const { userId } = req.params
+    const { slotNumber, playtime } = req.body
+
+    if (slotNumber && playtime !== undefined) {
+      await saveService.updatePlaytime(userId, slotNumber, playtime)
+    }
+
+    // Also update in-memory tracking
+    const playtimeData = sessionPlaytime.get(userId)
+    if (playtimeData) {
+      const currentSessionTime = Math.floor((Date.now() - playtimeData.startTime) / 1000)
+      playtimeData.totalPlaytime += currentSessionTime
+      playtimeData.startTime = Date.now()
+    }
+
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update playtime' })
   }
 })
 
@@ -384,6 +574,64 @@ app.get('/map.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'map.html'))
 })
 
+// Database API endpoints for NPCs and Game Config
+
+// Save permanent NPCs
+app.post('/api/database/npcs', async (req, res) => {
+  try {
+    const { npcs } = req.body
+    if (!npcs || !Array.isArray(npcs)) {
+      return res.status(400).json({ error: 'NPCs array is required' })
+    }
+    await dbManager.saveNPCs(npcs)
+    res.json({ success: true, message: `Saved ${npcs.length} NPCs to database` })
+  } catch (error) {
+    console.error('Error saving NPCs:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save NPCs' })
+  }
+})
+
+// Load permanent NPCs
+app.get('/api/database/npcs', async (req, res) => {
+  try {
+    const npcs = await dbManager.loadNPCs()
+    res.json({ npcs })
+  } catch (error) {
+    console.error('Error loading NPCs:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load NPCs' })
+  }
+})
+
+// Save game config
+app.post('/api/database/config', async (req, res) => {
+  try {
+    const { config, key } = req.body
+    if (!config) {
+      return res.status(400).json({ error: 'Config object is required' })
+    }
+    await dbManager.saveGameConfig(config, key || 'default')
+    res.json({ success: true, message: 'Game config saved to database' })
+  } catch (error) {
+    console.error('Error saving config:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save config' })
+  }
+})
+
+// Load game config
+app.get('/api/database/config', async (req, res) => {
+  try {
+    const key = req.query.key as string || 'default'
+    const config = await dbManager.loadGameConfig(key)
+    if (!config) {
+      return res.status(404).json({ error: 'Config not found' })
+    }
+    res.json({ config })
+  } catch (error) {
+    console.error('Error loading config:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load config' })
+  }
+})
+
 // Serve frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'))
@@ -391,5 +639,18 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🌐 Three Tribes Chronicle server running on http://localhost:${PORT}`)
+})
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down gracefully...')
+  await dbManager.close()
+  process.exit(0)
+})
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Shutting down gracefully...')
+  await dbManager.close()
+  process.exit(0)
 })
 

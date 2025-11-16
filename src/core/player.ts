@@ -73,8 +73,22 @@ export class PlayerManager {
   }
 
   restoreStamina(baseStamina: number = 5, staminaRegenBonus: number = 1): void {
-    this.player.stamina = this.getEffectiveStamina(baseStamina, staminaRegenBonus);
-    this.player.maxStamina = this.player.stamina;
+    // Calculate effective stamina (base + bonuses)
+    const effectiveStamina = this.getEffectiveStamina(baseStamina, staminaRegenBonus);
+    
+    // Restore stamina to maxStamina (which includes level-up increases)
+    // But don't exceed the effective stamina calculation
+    // This preserves level-up increases while respecting skill/morale bonuses
+    const targetStamina = Math.max(effectiveStamina, this.player.maxStamina);
+    
+    // Only update maxStamina if effective stamina is higher (from skills/morale)
+    // Otherwise preserve the level-up increased maxStamina
+    if (effectiveStamina > this.player.maxStamina) {
+      this.player.maxStamina = effectiveStamina;
+    }
+    
+    // Restore current stamina to maxStamina
+    this.player.stamina = this.player.maxStamina;
   }
 
   addXP(amount: number, xpMultiplier: number = 1.0, levelUpMultiplier: number = 1.0): boolean {
