@@ -81,53 +81,81 @@
                             </div>
                         </section>
 
-                        <!-- Equipment -->
-                        <section class="card equipment-card">
-                            <h2>⚔️ Equipment</h2>
-                            <div class="equipment-grid">
-                                <div class="equipment-slot" data-slot="weapon" title="Weapon" draggable="false">
-                                    <div class="slot-label">⚔️</div>
-                                    <div class="slot-item" id="equipped-weapon"></div>
-                                </div>
-                                <div class="equipment-slot" data-slot="armor" title="Armor" draggable="false">
-                                    <div class="slot-label">🛡️</div>
-                                    <div class="slot-item" id="equipped-armor"></div>
-                                </div>
-                                <div class="equipment-slot" data-slot="accessory1" title="Accessory 1" draggable="false">
-                                    <div class="slot-label">💍</div>
-                                    <div class="slot-item" id="equipped-accessory1"></div>
-                                </div>
-                                <div class="equipment-slot" data-slot="accessory2" title="Accessory 2" draggable="false">
-                                    <div class="slot-label">💍</div>
-                                    <div class="slot-item" id="equipped-accessory2"></div>
-                                </div>
-                                <div class="equipment-slot" data-slot="accessory3" title="Accessory 3" draggable="false">
-                                    <div class="slot-label">💍</div>
-                                    <div class="slot-item" id="equipped-accessory3"></div>
-                                </div>
+                        
+                        <!-- Context Menu -->
+                        <div id="context-menu" class="context-menu">
+                            <div class="context-menu-item" data-action="equip">
+                                <span class="context-icon">⚔️</span>
+                                <span class="context-text">Equip</span>
                             </div>
-                        </section>
-
-                        <!-- Inventory -->
-                        <section class="card inventory-card">
-                            <h2>🎒 Inventory <span id="bag-count">(0/50)</span></h2>
-                            <div class="bag-grid" id="bag-grid">
-                                <!-- Bag slots will be generated here -->
+                            <div class="context-menu-item" data-action="use">
+                                <span class="context-icon">💊</span>
+                                <span class="context-text">Use</span>
                             </div>
-                        </section>
+                            <div class="context-menu-item" data-action="sell">
+                                <span class="context-icon">💰</span>
+                                <span class="context-text">Sell</span>
+                            </div>
+                            <div class="context-menu-item" data-action="unequip" style="display: none;">
+                                <span class="context-icon">📦</span>
+                                <span class="context-text">Unequip</span>
+                            </div>
+                            <div class="context-menu-divider"></div>
+                            <div class="context-menu-item" data-action="info">
+                                <span class="context-icon">ℹ️</span>
+                                <span class="context-text">Info</span>
+                            </div>
+                        </div>
                     </aside>
 
                     <!-- Main Content -->
                     <main class="main-content">
-                        <!-- Top Row: Map and Actions -->
+                        <!-- Top Row: Inventory/Equipment Focus and Actions -->
                         <div class="top-row">
-                            <!-- World Map -->
-                            <section class="card map-card">
-                                <h2>🗺️ Map</h2>
-                                <div class="map-wrapper">
-                                    <div class="map-canvas" id="map-canvas">
-                                        <!-- Map terrain and NPCs will be rendered here -->
+                            <!-- Inventory & Equipment Section (Prominent) -->
+                            <section class="card inventory-main-section">
+                                <h2>🎒 Inventory & Equipment</h2>
+                                <div class="inventory-main-content">
+                                    <!-- Equipment Grid (Top) -->
+                                    <div class="equipment-main-grid">
+                                        <div class="equipment-slot-main" data-slot="weapon" title="Weapon" draggable="false">
+                                            <div class="slot-label-main">⚔️</div>
+                                            <div class="slot-item-main" id="equipped-weapon-main"></div>
+                                        </div>
+                                        <div class="equipment-slot-main" data-slot="armor" title="Armor" draggable="false">
+                                            <div class="slot-label-main">🛡️</div>
+                                            <div class="slot-item-main" id="equipped-armor-main"></div>
+                                        </div>
+                                        <div class="equipment-slot-main" data-slot="accessory1" title="Accessory 1" draggable="false">
+                                            <div class="slot-label-main">💍</div>
+                                            <div class="slot-item-main" id="equipped-accessory1-main"></div>
+                                        </div>
+                                        <div class="equipment-slot-main" data-slot="accessory2" title="Accessory 2" draggable="false">
+                                            <div class="slot-label-main">💍</div>
+                                            <div class="slot-item-main" id="equipped-accessory2-main"></div>
+                                        </div>
+                                        <div class="equipment-slot-main" data-slot="accessory3" title="Accessory 3" draggable="false">
+                                            <div class="slot-label-main">💍</div>
+                                            <div class="slot-item-main" id="equipped-accessory3-main"></div>
+                                        </div>
                                     </div>
+                                    
+                                    <!-- Inventory Grid (Bottom) -->
+                                    <div class="inventory-main-header">
+                                        <h3>Bag <span id="bag-count-main">(0/50)</span></h3>
+                                        <div class="inventory-main-controls">
+                                            <select id="inventory-filter-main" class="inventory-filter">
+                                                <option value="all">All</option>
+                                                <option value="weapon">Weapons</option>
+                                                <option value="armor">Armor</option>
+                                                <option value="accessory">Accessories</option>
+                                                <option value="consumable">Consumables</option>
+                                                <option value="material">Materials</option>
+                                            </select>
+                                            <button id="sort-type-btn-main" class="btn-sort-type" title="Sort by Type">🔀</button>
+                                        </div>
+                                    </div>
+                                    <div class="bag-grid-main" id="bag-grid-main"></div>
                                 </div>
                             </section>
 

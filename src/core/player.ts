@@ -475,5 +475,65 @@ export class PlayerManager {
 
     return { success: true, message: `Consumed ${item.name}.` };
   }
+
+  // Sell item
+  sellItem(itemId: string, sellValue?: number): { success: boolean; message: string; wealthGained: number } {
+    if (!this.player.bag) return { success: false, message: 'Bag not initialized.', wealthGained: 0 };
+
+    const item = this.player.bag.find(i => i.id === itemId);
+    if (!item) {
+      return { success: false, message: 'Item not found in bag.', wealthGained: 0 };
+    }
+
+    // Calculate sell value
+    const value = sellValue || item.sellValue || this.calculateSellValue(item);
+    
+    if (value <= 0) {
+      return { success: false, message: 'This item cannot be sold.', wealthGained: 0 };
+    }
+
+    // Add wealth
+    if (!this.player.inventory) {
+      this.player.inventory = { food: 0, materials: 0, wealth: 0 };
+    }
+    this.player.inventory.wealth = (this.player.inventory.wealth || 0) + value;
+
+    // Remove item
+    this.removeItemFromBag(itemId, 1);
+
+    return { 
+      success: true, 
+      message: `Sold ${item.name} for ${value}💰.`, 
+      wealthGained: value 
+    };
+  }
+
+  // Calculate sell value for an item
+  private calculateSellValue(item: Item): number {
+    const baseValues: Record<string, number> = {
+      common: 5,
+      uncommon: 15,
+      rare: 50,
+      epic: 150,
+      legendary: 500,
+    };
+
+    let value = baseValues[item.rarity] || 5;
+
+    // Add value based on stats
+    if (item.stats) {
+      const statValue =
+        (item.stats.str || 0) +
+        (item.stats.dex || 0) +
+        (item.stats.wis || 0) +
+        (item.stats.cha || 0) +
+        (item.stats.luck || 0) +
+        (item.stats.damage || 0) * 2 +
+        (item.stats.defense || 0) * 2;
+      value += statValue * 2;
+    }
+
+    return Math.floor(value);
+  }
 }
 

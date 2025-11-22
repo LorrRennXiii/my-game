@@ -364,6 +364,14 @@ export class GameLoop {
     return this.playerManager.consumeItem(itemId)
   }
 
+  sellItem(itemId: string, sellValue?: number): { success: boolean; message: string; wealthGained: number } {
+    return this.playerManager.sellItem(itemId, sellValue)
+  }
+
+  getEffectiveStats() {
+    return this.playerManager.getEffectiveStats()
+  }
+
   executeCombat(animal: any): any {
     return this.actionManager.executeCombat(animal)
   }

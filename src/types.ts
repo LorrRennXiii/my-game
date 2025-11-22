@@ -59,6 +59,10 @@ export interface Item {
     stamina?: number
     duration?: number // For temporary effects
   }
+  // Diablo-style inventory size
+  width?: number // Grid width (default: 1)
+  height?: number // Grid height (default: 1)
+  bagPosition?: { x: number; y: number } // Position in bag grid
 }
 
 export interface EquipmentSlots {

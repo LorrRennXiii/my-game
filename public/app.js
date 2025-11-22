@@ -42,6 +42,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Setup tribe info panel toggle
   setupTribeInfoPanel();
 
+  // Setup inventory filters and sorting
+  setupInventoryControls();
+
   // Note: Backend already saves to active_games table after every action
   // No need to auto-save on page unload - game state is already persisted
   // The active_games table is the primary persistence mechanism
@@ -644,8 +647,16 @@ function updateUI() {
                 <span>WIS: ${gameState.player.stats.wis}</span>
             </div>
             <div class="stat-bar">
-                <span>CHA: ${gameState.player.stats.cha}</span>
-                <span>LCK: ${gameState.player.stats.luck}</span>
+                <span>CHA: ${gameState.player.stats.cha}${
+      gameState.effectiveStats
+        ? ` (+${gameState.effectiveStats.cha - gameState.player.stats.cha})`
+        : ""
+    }</span>
+                <span>LCK: ${gameState.player.stats.luck}${
+      gameState.effectiveStats
+        ? ` (+${gameState.effectiveStats.luck - gameState.player.stats.luck})`
+        : ""
+    }</span>
             </div>
             <div class="status-item" style="margin-top: 10px;">
                 <span>Inventory:</span>
@@ -1199,21 +1210,21 @@ function updateInventory() {
     accessory3: null,
   };
 
-  // Update bag count
-  const bagCountEl = document.getElementById("bag-count");
-  if (bagCountEl) {
-    bagCountEl.textContent = `(${bag.length}/50)`;
+  // Update bag count (main section only)
+  const bagCountMainEl = document.getElementById("bag-count-main");
+  if (bagCountMainEl) {
+    bagCountMainEl.textContent = `(${bag.length}/50)`;
   }
 
-  // Update equipment slots
-  updateEquipmentSlot("weapon", equipment.weapon);
-  updateEquipmentSlot("armor", equipment.armor);
-  updateEquipmentSlot("accessory1", equipment.accessory1);
-  updateEquipmentSlot("accessory2", equipment.accessory2);
-  updateEquipmentSlot("accessory3", equipment.accessory3);
+  // Update main section equipment only (left panel removed)
+  updateEquipmentSlotMain("weapon", equipment.weapon);
+  updateEquipmentSlotMain("armor", equipment.armor);
+  updateEquipmentSlotMain("accessory1", equipment.accessory1);
+  updateEquipmentSlotMain("accessory2", equipment.accessory2);
+  updateEquipmentSlotMain("accessory3", equipment.accessory3);
 
-  // Update bag grid
-  updateBagGrid(bag);
+  // Update bag grid (main section only)
+  updateBagGridMain(bag);
 }
 
 function updateEquipmentSlot(slotName, item) {
@@ -1233,6 +1244,12 @@ function updateEquipmentSlot(slotName, item) {
 
     // Setup drag handlers for equipped items
     setupEquipmentDragHandlers(slotEl, item, slotName);
+
+    // Add right-click context menu handler for equipment
+    slotEl.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showEquipmentContextMenu(e, item, slotName);
+    });
   } else {
     slotEl.classList.remove("has-item");
     slotEl.classList.remove(
@@ -1245,58 +1262,209 @@ function updateEquipmentSlot(slotName, item) {
     itemEl.innerHTML = "";
     slotEl.title = getSlotLabel(slotName);
     slotEl.draggable = false;
+
+    // Remove context menu handler for empty slots
+    const newSlot = slotEl.cloneNode(true);
+    slotEl.parentNode.replaceChild(newSlot, slotEl);
   }
 }
 
 function setupEquipmentDragHandlers(slot, item, slotName) {
+  // Check if this is main section or left panel
+  const isMain = slot.classList.contains("equipment-slot-main");
+  const selector = isMain
+    ? `.equipment-slot-main[data-slot="${slotName}"]`
+    : `.equipment-slot[data-slot="${slotName}"]`;
+  const itemId = isMain ? `equipped-${slotName}-main` : `equipped-${slotName}`;
+
+  // Drag start for equipped items (to unequip by dragging to bag)
+  slot.addEventListener("dragstart", (e) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(
+      "text/plain",
+      JSON.stringify({
+        itemId: item.id,
+        slotName: slotName,
+        source: "equipment",
+      })
+    );
+    slot.classList.add("dragging");
+  });
+
+  slot.addEventListener("dragend", (e) => {
+    slot.classList.remove("dragging");
+    document
+      .querySelectorAll(
+        ".equipment-slot-main, .bag-slot-main, .equipment-slot, .bag-slot"
+      )
+      .forEach((s) => {
+        s.classList.remove("drag-over");
+      });
+  });
+}
+
+function updateEquipmentSlotMain(slotName, item) {
+  const slotEl = document.querySelector(
+    `.equipment-slot-main[data-slot="${slotName}"]`
+  );
+  const itemEl = document.getElementById(`equipped-${slotName}-main`);
+
+  if (!slotEl || !itemEl) return;
+
+  // Remove existing event listeners by cloning
+  const newSlot = slotEl.cloneNode(true);
+  slotEl.parentNode.replaceChild(newSlot, slotEl);
+  const updatedSlot = document.querySelector(
+    `.equipment-slot-main[data-slot="${slotName}"]`
+  );
+  const updatedItemEl = document.getElementById(`equipped-${slotName}-main`);
+
+  if (item) {
+    updatedSlot.classList.add("has-item");
+    updatedSlot.classList.add(`item-${item.rarity}`);
+    updatedItemEl.innerHTML = createItemDisplay(item, true);
+    updatedSlot.title = item.name;
+    updatedSlot.draggable = true;
+
+    // Setup drag handlers for equipped items
+    setupEquipmentDragHandlers(updatedSlot, item, slotName);
+
+    // Add right-click context menu handler for equipment
+    updatedSlot.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showEquipmentContextMenu(e, item, slotName);
+    });
+
+    // Setup drop handlers for equipment slots
+    setupEquipmentDropHandlersMain(updatedSlot, slotName);
+  } else {
+    updatedSlot.classList.remove("has-item");
+    updatedSlot.classList.remove(
+      "item-common",
+      "item-uncommon",
+      "item-rare",
+      "item-epic",
+      "item-legendary"
+    );
+    updatedItemEl.innerHTML = "";
+    updatedSlot.title = getSlotLabel(slotName);
+    updatedSlot.draggable = false;
+
+    // Setup drop handlers for empty equipment slots
+    setupEquipmentDropHandlersMain(updatedSlot, slotName);
+  }
+}
+
+function setupEquipmentDropHandlersMain(slot, slotName) {
   // Remove existing handlers
   const newSlot = slot.cloneNode(true);
   slot.parentNode.replaceChild(newSlot, slot);
-
-  const equipmentSlot = document.querySelector(
-    `.equipment-slot[data-slot="${slotName}"]`
+  const updatedSlot = document.querySelector(
+    `.equipment-slot-main[data-slot="${slotName}"]`
   );
-  const itemEl = document.getElementById(`equipped-${slotName}`);
 
-  // Drag start for equipped items (to unequip by dragging to bag)
-  if (equipmentSlot && itemEl) {
-    equipmentSlot.addEventListener("dragstart", (e) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData(
-        "text/plain",
-        JSON.stringify({
-          itemId: item.id,
-          slotName: slotName,
-          source: "equipment",
-        })
-      );
-      equipmentSlot.classList.add("dragging");
-    });
+  if (!updatedSlot) return;
 
-    equipmentSlot.addEventListener("dragend", (e) => {
-      equipmentSlot.classList.remove("dragging");
-      document.querySelectorAll(".bag-slot").forEach((s) => {
-        s.classList.remove("drag-over");
-      });
-    });
-  }
+  // Allow drop
+  updatedSlot.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    updatedSlot.classList.add("drag-over");
+  });
+
+  // Remove drag-over on drag leave
+  updatedSlot.addEventListener("dragleave", (e) => {
+    updatedSlot.classList.remove("drag-over");
+  });
+
+  // Handle drop
+  updatedSlot.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    updatedSlot.classList.remove("drag-over");
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+
+      if (data.source === "bag" && data.itemId) {
+        const itemType = data.itemType;
+
+        // Validate item can be equipped in this slot
+        if (slotName === "weapon" && itemType !== "weapon") {
+          addMessage(
+            "This item cannot be equipped in the weapon slot.",
+            "error"
+          );
+          return;
+        }
+        if (slotName === "armor" && itemType !== "armor") {
+          addMessage(
+            "This item cannot be equipped in the armor slot.",
+            "error"
+          );
+          return;
+        }
+        if (slotName.startsWith("accessory") && itemType !== "accessory") {
+          addMessage(
+            "This item cannot be equipped in the accessory slot.",
+            "error"
+          );
+          return;
+        }
+
+        // Equip the item
+        await equipItem(data.itemId);
+      }
+    } catch (error) {
+      console.error("Error handling drop:", error);
+    }
+  });
+
+  // Click to unequip
+  updatedSlot.addEventListener("click", async (e) => {
+    // Only unequip if not dragging and has item
+    if (e.target.closest(".dragging")) return;
+
+    const equipment = gameState?.equipment || {};
+    const item = equipment[slotName];
+
+    if (item) {
+      await unequipItem(slotName);
+    }
+  });
 }
 
 function updateBagGrid(bag) {
   const bagGrid = document.getElementById("bag-grid");
   if (!bagGrid) return;
 
+  // Get filter and sort values
+  const filterValue =
+    document.getElementById("inventory-filter")?.value || "all";
+  const sortValue =
+    document.getElementById("inventory-sort")?.value || "default";
+
+  // Filter items
+  let filteredBag = [...bag];
+  if (filterValue !== "all") {
+    filteredBag = bag.filter((item) => item.type === filterValue);
+  }
+
+  // Sort items
+  filteredBag = sortItems(filteredBag, sortValue);
+
   // Clear existing slots
   bagGrid.innerHTML = "";
 
-  // Create 50 slots
-  for (let i = 0; i < 50; i++) {
+  // Create slots for filtered items (still show 50 slots total)
+  const totalSlots = 50;
+  for (let i = 0; i < totalSlots; i++) {
     const slot = document.createElement("div");
     slot.className = "bag-slot empty";
     slot.dataset.slotIndex = i;
 
-    if (i < bag.length) {
-      const item = bag[i];
+    if (i < filteredBag.length) {
+      const item = filteredBag[i];
+      const originalIndex = bag.findIndex((b) => b.id === item.id);
       slot.classList.remove("empty");
       slot.classList.add(`item-${item.rarity}`);
       slot.innerHTML = createItemDisplay(item, false);
@@ -1305,10 +1473,266 @@ function updateBagGrid(bag) {
       slot.draggable = true;
 
       // Add drag handlers
-      setupBagDragHandlers(slot, item, i);
+      setupBagDragHandlers(slot, item, originalIndex >= 0 ? originalIndex : i);
+
+      // Add right-click context menu handler
+      slot.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContextMenu(e, item, originalIndex >= 0 ? originalIndex : i);
+      });
+
+      // Add double-click handler for quick actions
+      slot.addEventListener("dblclick", () => {
+        handleQuickAction(item);
+      });
     }
 
     bagGrid.appendChild(slot);
+  }
+}
+
+// Diablo-style inventory grid: 10 columns x 8 rows = 80 slots
+const BAG_GRID_WIDTH = 10;
+const BAG_GRID_HEIGHT = 8;
+const BAG_GRID_TOTAL = BAG_GRID_WIDTH * BAG_GRID_HEIGHT;
+
+function getItemSize(item) {
+  // Assign sizes based on item type (Diablo 3 style)
+  if (!item.width || !item.height) {
+    switch (item.type) {
+      case "consumable":
+      case "material":
+        return { width: 1, height: 1 };
+      case "weapon":
+        return { width: 2, height: 1 }; // Horizontal weapons
+      case "armor":
+        return { width: 2, height: 2 }; // Square armor
+      case "accessory":
+        return { width: 1, height: 1 };
+      default:
+        return { width: 1, height: 1 };
+    }
+  }
+  return { width: item.width, height: item.height };
+}
+
+function findItemPosition(bag, item, gridWidth = BAG_GRID_WIDTH) {
+  const size = getItemSize(item);
+
+  // If item already has a position, check if it's still valid
+  if (item.bagPosition) {
+    const { x, y } = item.bagPosition;
+    if (
+      canPlaceItemAt(bag, item.id, x, y, size.width, size.height, gridWidth)
+    ) {
+      return { x, y };
+    }
+  }
+
+  // Try to find a valid position
+  for (let y = 0; y <= BAG_GRID_HEIGHT - size.height; y++) {
+    for (let x = 0; x <= gridWidth - size.width; x++) {
+      if (
+        canPlaceItemAt(bag, item.id, x, y, size.width, size.height, gridWidth)
+      ) {
+        return { x, y };
+      }
+    }
+  }
+
+  return null; // No space available
+}
+
+function canPlaceItemAt(bag, itemId, x, y, width, height, gridWidth) {
+  for (let dy = 0; dy < height; dy++) {
+    for (let dx = 0; dx < width; dx++) {
+      const checkX = x + dx;
+      const checkY = y + dy;
+      const slotIndex = checkY * gridWidth + checkX;
+
+      if (slotIndex >= BAG_GRID_TOTAL) return false;
+
+      // Check if this slot is occupied by another item
+      const occupyingItem = bag.find((item) => {
+        if (item.id === itemId) return false;
+        if (!item.bagPosition) return false;
+        const itemSize = getItemSize(item);
+        const itemX = item.bagPosition.x;
+        const itemY = item.bagPosition.y;
+
+        return (
+          checkX >= itemX &&
+          checkX < itemX + itemSize.width &&
+          checkY >= itemY &&
+          checkY < itemY + itemSize.height
+        );
+      });
+
+      if (occupyingItem) return false;
+    }
+  }
+  return true;
+}
+
+function updateBagGridMain(bag) {
+  const bagGrid = document.getElementById("bag-grid-main");
+  if (!bagGrid) return;
+
+  // Get filter value
+  const filterValue =
+    document.getElementById("inventory-filter-main")?.value || "all";
+
+  // Filter items
+  let filteredBag = [...bag];
+  if (filterValue !== "all") {
+    filteredBag = bag.filter((item) => item.type === filterValue);
+  }
+
+  // Clear existing slots
+  bagGrid.innerHTML = "";
+
+  // Create grid slots (10x8 = 80 slots)
+  const grid = Array(BAG_GRID_TOTAL).fill(null);
+
+  // Place items in grid
+  filteredBag.forEach((item) => {
+    const position = findItemPosition(bag, item);
+    if (position) {
+      item.bagPosition = position;
+      const size = getItemSize(item);
+
+      // Mark all slots occupied by this item
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          const slotX = position.x + dx;
+          const slotY = position.y + dy;
+          const slotIndex = slotY * BAG_GRID_WIDTH + slotX;
+          if (slotIndex < BAG_GRID_TOTAL) {
+            if (!grid[slotIndex]) {
+              grid[slotIndex] = { item, isFirst: dx === 0 && dy === 0 };
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Render grid
+  for (let i = 0; i < BAG_GRID_TOTAL; i++) {
+    const slot = document.createElement("div");
+    slot.className = "bag-slot-main empty";
+    slot.dataset.slotIndex = i;
+    slot.dataset.gridX = i % BAG_GRID_WIDTH;
+    slot.dataset.gridY = Math.floor(i / BAG_GRID_WIDTH);
+
+    const slotData = grid[i];
+    if (slotData && slotData.isFirst) {
+      // This is the top-left slot of an item
+      const item = slotData.item;
+      const size = getItemSize(item);
+      const originalIndex = bag.findIndex((b) => b.id === item.id);
+
+      slot.classList.remove("empty");
+      slot.classList.add("occupied");
+
+      // Create item element
+      const itemEl = document.createElement("div");
+      itemEl.className = `bag-item item-${item.rarity}`;
+      itemEl.style.position = "absolute";
+      itemEl.style.left = `${position.x * (100 / BAG_GRID_WIDTH)}%`;
+      itemEl.style.top = `${position.y * (100 / BAG_GRID_HEIGHT)}%`;
+      itemEl.style.width = `${size.width * (100 / BAG_GRID_WIDTH)}%`;
+      itemEl.style.height = `${size.height * (100 / BAG_GRID_HEIGHT)}%`;
+      itemEl.style.margin = "2px";
+      itemEl.style.boxSizing = "border-box";
+      itemEl.dataset.itemId = item.id;
+      itemEl.dataset.itemType = item.type;
+      itemEl.dataset.itemWidth = size.width;
+      itemEl.dataset.itemHeight = size.height;
+      itemEl.draggable = true;
+      itemEl.title = item.name;
+
+      itemEl.innerHTML = `
+        <div class="item-icon">${item.icon || "📦"}</div>
+        ${
+          item.quantity && item.quantity > 1
+            ? `<div class="item-quantity">${item.quantity}</div>`
+            : ""
+        }
+      `;
+
+      // Add drag handlers
+      setupBagDragHandlers(
+        itemEl,
+        item,
+        originalIndex >= 0 ? originalIndex : i
+      );
+
+      // Add right-click context menu handler
+      itemEl.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContextMenu(e, item, originalIndex >= 0 ? originalIndex : i);
+      });
+
+      // Add double-click handler for quick actions
+      itemEl.addEventListener("dblclick", async () => {
+        await handleQuickAction(item);
+      });
+
+      bagGrid.appendChild(itemEl);
+    } else if (slotData && !slotData.isFirst) {
+      // This slot is occupied but not the first slot
+      slot.classList.remove("empty");
+      slot.classList.add("occupied");
+    } else {
+      // Empty slot - setup drop handlers
+      setupBagDropHandlersMain(slot, i);
+    }
+
+    bagGrid.appendChild(slot);
+  }
+}
+
+function sortItems(items, sortType) {
+  const sorted = [...items];
+
+  switch (sortType) {
+    case "name":
+      return sorted.sort((a, b) => a.name.localeCompare(b.name));
+    case "rarity":
+      const rarityOrder = {
+        legendary: 5,
+        epic: 4,
+        rare: 3,
+        uncommon: 2,
+        common: 1,
+      };
+      return sorted.sort(
+        (a, b) => (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0)
+      );
+    case "value":
+      return sorted.sort((a, b) => {
+        const valueA = a.sellValue || calculateItemSellValue(a);
+        const valueB = b.sellValue || calculateItemSellValue(b);
+        return valueB - valueA;
+      });
+    case "type":
+      return sorted.sort((a, b) => a.type.localeCompare(b.type));
+    default:
+      return sorted;
+  }
+}
+
+async function handleQuickAction(item) {
+  // Quick action: equip if equippable, use if consumable
+  if (
+    item.type === "weapon" ||
+    item.type === "armor" ||
+    item.type === "accessory"
+  ) {
+    await equipItem(item.id);
+  } else if (item.type === "consumable") {
+    await consumeItem(item.id);
   }
 }
 
@@ -1332,14 +1756,47 @@ function setupBagDragHandlers(slot, item, bagIndex) {
   slot.addEventListener("dragend", (e) => {
     slot.classList.remove("dragging");
     // Remove drag-over class from all slots
-    document.querySelectorAll(".equipment-slot, .bag-slot").forEach((s) => {
-      s.classList.remove("drag-over");
-    });
+    document
+      .querySelectorAll(
+        ".equipment-slot-main, .bag-slot-main, .equipment-slot, .bag-slot"
+      )
+      .forEach((s) => {
+        s.classList.remove("drag-over");
+      });
   });
 }
 
 function setupBagDropHandlers(slot, slotIndex) {
   // Allow drop on empty bag slots
+  slot.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    slot.classList.add("drag-over");
+  });
+
+  slot.addEventListener("dragleave", (e) => {
+    slot.classList.remove("drag-over");
+  });
+
+  slot.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    slot.classList.remove("drag-over");
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+
+      if (data.source === "equipment" && data.slotName) {
+        // Unequip item (it will go back to bag automatically)
+        await unequipItem(data.slotName);
+      }
+    } catch (error) {
+      console.error("Error handling bag drop:", error);
+    }
+  });
+}
+
+function setupBagDropHandlersMain(slot, slotIndex) {
+  // Allow drop on bag slots (main section)
   slot.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -1374,6 +1831,15 @@ function createItemDisplay(item, isEquipment) {
       ? `<div class="item-quantity">${quantity}</div>`
       : "";
 
+  // Get comparison stats if equippable and not already equipped
+  const comparisonStats =
+    !isEquipment &&
+    (item.type === "weapon" ||
+      item.type === "armor" ||
+      item.type === "accessory")
+      ? getItemComparison(item)
+      : null;
+
   return `
     <div class="item-display">
       <div class="item-icon">${item.icon || "📦"}</div>
@@ -1384,10 +1850,15 @@ function createItemDisplay(item, isEquipment) {
         )}">${item.name}</div>
         <div class="tooltip-type">${item.type} • ${item.rarity}</div>
         <div class="tooltip-description">${item.description}</div>
-        ${createStatDisplay(item)}
+        ${createStatDisplay(item, comparisonStats)}
         ${
           item.level
             ? `<div class="tooltip-level">Requires Level ${item.level}</div>`
+            : ""
+        }
+        ${
+          comparisonStats
+            ? `<div class="tooltip-comparison">${comparisonStats}</div>`
             : ""
         }
         <div class="tooltip-actions">
@@ -1415,6 +1886,69 @@ function createItemDisplay(item, isEquipment) {
       </div>
     </div>
   `;
+}
+
+function getItemComparison(item) {
+  if (!gameState || !gameState.equipment) return null;
+
+  const equipment = gameState.equipment;
+  let currentItem = null;
+  let slotName = "";
+
+  if (item.type === "weapon") {
+    currentItem = equipment.weapon;
+    slotName = "weapon";
+  } else if (item.type === "armor") {
+    currentItem = equipment.armor;
+    slotName = "armor";
+  } else if (item.type === "accessory") {
+    // Find which accessory slot to compare with (use first empty or first one)
+    if (!equipment.accessory1) slotName = "accessory1";
+    else if (!equipment.accessory2) slotName = "accessory2";
+    else if (!equipment.accessory3) slotName = "accessory3";
+    else {
+      currentItem = equipment.accessory1;
+      slotName = "accessory1";
+    }
+  }
+
+  if (!currentItem) {
+    return `<div class="comparison-new">New item - will be equipped</div>`;
+  }
+
+  const comparisons = [];
+  const stats = [
+    "str",
+    "dex",
+    "wis",
+    "cha",
+    "luck",
+    "damage",
+    "defense",
+    "health",
+    "stamina",
+  ];
+
+  stats.forEach((stat) => {
+    const newStat = item.stats?.[stat] || 0;
+    const currentStat = currentItem.stats?.[stat] || 0;
+    if (newStat !== currentStat) {
+      const diff = newStat - currentStat;
+      const sign = diff > 0 ? "+" : "";
+      const color = diff > 0 ? "#10b981" : "#ef4444";
+      comparisons.push(
+        `<span style="color: ${color}">${stat.toUpperCase()}: ${sign}${diff}</span>`
+      );
+    }
+  });
+
+  if (comparisons.length === 0) {
+    return `<div class="comparison-same">Similar stats to equipped item</div>`;
+  }
+
+  return `<div class="comparison-stats">vs Equipped: ${comparisons.join(
+    ", "
+  )}</div>`;
 }
 
 function createStatDisplay(item) {
@@ -1463,6 +1997,25 @@ function getRarityColor(rarity) {
     legendary: "#f59e0b",
   };
   return colors[rarity] || colors.common;
+}
+
+function calculateEffectiveStats(player, equipment) {
+  if (!player || !equipment) return player?.stats || {};
+
+  const baseStats = { ...player.stats };
+  const effectiveStats = { ...baseStats };
+
+  // Add stats from equipped items
+  Object.values(equipment).forEach((item) => {
+    if (item && item.stats) {
+      Object.keys(item.stats).forEach((stat) => {
+        effectiveStats[stat] =
+          (effectiveStats[stat] || 0) + (item.stats[stat] || 0);
+      });
+    }
+  });
+
+  return effectiveStats;
 }
 
 function getSlotLabel(slotName) {
@@ -1544,9 +2097,28 @@ async function equipItem(itemId) {
         bag: data.bag || [],
         equipment: data.equipment || gameState.equipment,
       };
+
+      // Calculate effective stats from equipment
+      gameState.effectiveStats = calculateEffectiveStats(
+        gameState.player,
+        gameState.equipment
+      );
+
       updateInventory();
       updateUI();
-      addMessage(data.result.message, "success");
+
+      // Show stat changes if item was equipped
+      if (data.result.unequipped) {
+        addMessage(
+          `Equipped ${item.name}. ${data.result.unequipped.name} was unequipped.`,
+          "success"
+        );
+      } else {
+        addMessage(data.result.message, "success");
+      }
+
+      // Visual feedback animation
+      showItemActionFeedback("equipped", item.name);
     } else {
       addMessage(data.result.message, "error");
     }
@@ -1595,6 +2167,15 @@ async function consumeItem(itemId) {
     if (!gameState) return;
   }
 
+  // Find the item to get its name for feedback
+  const bag = gameState.bag || [];
+  const item = bag.find((i) => i.id === itemId);
+
+  if (!item) {
+    addMessage("Item not found in bag.", "error");
+    return;
+  }
+
   try {
     const response = await fetch(`${API_BASE}/api/game/${userId}/consume`, {
       method: "POST",
@@ -1616,12 +2197,405 @@ async function consumeItem(itemId) {
       updateInventory();
       updateUI();
       addMessage(data.result.message, "success");
+
+      // Visual feedback animation
+      showItemActionFeedback("consumed", item.name);
     } else {
       addMessage(data.result.message, "error");
     }
   } catch (error) {
     console.error("Error consuming item:", error);
     addMessage("Failed to consume item.", "error");
+  }
+}
+
+async function sellItem(itemId) {
+  if (!userId || !gameState) {
+    if (!userId) userId = getOrCreateUserId();
+    if (!gameState) return;
+  }
+
+  const bag = gameState.bag || [];
+  const item = bag.find((i) => i.id === itemId);
+
+  if (!item) {
+    addMessage("Item not found in bag.", "error");
+    return;
+  }
+
+  // Calculate sell value (use sellValue if available, otherwise calculate from rarity)
+  const sellValue = item.sellValue || calculateItemSellValue(item);
+
+  if (sellValue <= 0) {
+    addMessage("This item cannot be sold.", "error");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/game/${userId}/sell`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId, sellValue }),
+    });
+
+    const data = await response.json();
+
+    if (data.result.success) {
+      gameState = {
+        ...gameState,
+        bag: data.bag || [],
+        player: data.player || gameState.player,
+      };
+      updateInventory();
+      updateUI();
+      addMessage(data.result.message, "success");
+
+      // Visual feedback animation
+      showItemActionFeedback("sold", item.name, sellValue);
+    } else {
+      addMessage(data.result.message, "error");
+    }
+  } catch (error) {
+    console.error("Error selling item:", error);
+    addMessage("Failed to sell item.", "error");
+  }
+}
+
+function calculateItemSellValue(item) {
+  const baseValues = {
+    common: 5,
+    uncommon: 15,
+    rare: 50,
+    epic: 150,
+    legendary: 500,
+  };
+
+  let value = baseValues[item.rarity] || 5;
+
+  // Add value based on stats
+  if (item.stats) {
+    const statValue =
+      (item.stats.str || 0) +
+      (item.stats.dex || 0) +
+      (item.stats.wis || 0) +
+      (item.stats.cha || 0) +
+      (item.stats.luck || 0) +
+      (item.stats.damage || 0) * 2 +
+      (item.stats.defense || 0) * 2;
+    value += statValue * 2;
+  }
+
+  return Math.floor(value);
+}
+
+// Context Menu Functions
+let currentContextItem = null;
+let currentContextItemIndex = null;
+let currentContextSlot = null;
+let isEquipmentContext = false;
+
+function showContextMenu(event, item, bagIndex) {
+  isEquipmentContext = false;
+  currentContextSlot = null;
+  const contextMenu = document.getElementById("context-menu");
+  if (!contextMenu) return;
+
+  currentContextItem = item;
+  currentContextItemIndex = bagIndex;
+
+  // Position the menu at cursor
+  contextMenu.style.left = `${event.clientX}px`;
+  contextMenu.style.top = `${event.clientY}px`;
+  contextMenu.style.display = "block";
+
+  // Show/hide menu items based on item type
+  const equipItem = contextMenu.querySelector('[data-action="equip"]');
+  const useItem = contextMenu.querySelector('[data-action="use"]');
+  const sellItemEl = contextMenu.querySelector('[data-action="sell"]');
+  const infoItem = contextMenu.querySelector('[data-action="info"]');
+
+  // Equip option - only for equippable items
+  if (
+    item.type === "weapon" ||
+    item.type === "armor" ||
+    item.type === "accessory"
+  ) {
+    equipItem.style.display = "flex";
+  } else {
+    equipItem.style.display = "none";
+  }
+
+  // Use option - only for consumables
+  if (item.type === "consumable") {
+    useItem.style.display = "flex";
+  } else {
+    useItem.style.display = "none";
+  }
+
+  // Sell option - show for all items (they all have value)
+  sellItemEl.style.display = "flex";
+  const sellValue = item.sellValue || calculateItemSellValue(item);
+  sellItemEl.querySelector(
+    ".context-text"
+  ).textContent = `Sell (${sellValue}💰)`;
+
+  // Info option - always show
+  infoItem.style.display = "flex";
+
+  // Close menu when clicking elsewhere
+  setTimeout(() => {
+    document.addEventListener("click", closeContextMenu, true);
+    document.addEventListener("contextmenu", closeContextMenu, true);
+  }, 0);
+}
+
+function showEquipmentContextMenu(event, item, slotName) {
+  isEquipmentContext = true;
+  currentContextItem = item;
+  currentContextSlot = slotName;
+  currentContextItemIndex = null;
+
+  const contextMenu = document.getElementById("context-menu");
+  if (!contextMenu) return;
+
+  // Position the menu at cursor
+  contextMenu.style.left = `${event.clientX}px`;
+  contextMenu.style.top = `${event.clientY}px`;
+  contextMenu.style.display = "block";
+
+  // Show/hide menu items for equipment
+  const equipItem = contextMenu.querySelector('[data-action="equip"]');
+  const useItem = contextMenu.querySelector('[data-action="use"]');
+  const sellItemEl = contextMenu.querySelector('[data-action="sell"]');
+  const infoItem = contextMenu.querySelector('[data-action="info"]');
+  const unequipItem = contextMenu.querySelector('[data-action="unequip"]');
+
+  // Hide equip/use/sell for equipment
+  equipItem.style.display = "none";
+  useItem.style.display = "none";
+  sellItemEl.style.display = "none";
+
+  // Show unequip and info
+  if (!unequipItem) {
+    // Add unequip option if it doesn't exist
+    const divider = contextMenu.querySelector(".context-menu-divider");
+    const unequipEl = document.createElement("div");
+    unequipEl.className = "context-menu-item";
+    unequipEl.dataset.action = "unequip";
+    unequipEl.innerHTML =
+      '<span class="context-icon">📦</span><span class="context-text">Unequip</span>';
+    contextMenu.insertBefore(unequipEl, divider);
+  } else {
+    contextMenu.querySelector('[data-action="unequip"]').style.display = "flex";
+  }
+
+  infoItem.style.display = "flex";
+
+  // Close menu when clicking elsewhere
+  setTimeout(() => {
+    document.addEventListener("click", closeContextMenu, true);
+    document.addEventListener("contextmenu", closeContextMenu, true);
+  }, 0);
+}
+
+function closeContextMenu() {
+  const contextMenu = document.getElementById("context-menu");
+  if (contextMenu) {
+    contextMenu.style.display = "none";
+  }
+  document.removeEventListener("click", closeContextMenu, true);
+  document.removeEventListener("contextmenu", closeContextMenu, true);
+  currentContextItem = null;
+  currentContextItemIndex = null;
+  currentContextSlot = null;
+  isEquipmentContext = false;
+}
+
+// Setup context menu event handlers
+document.addEventListener("DOMContentLoaded", () => {
+  const contextMenu = document.getElementById("context-menu");
+  if (!contextMenu) return;
+
+  contextMenu.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const menuItem = e.target.closest(".context-menu-item");
+    if (!menuItem) return;
+
+    const action = menuItem.dataset.action;
+    if (!action) return;
+
+    if (isEquipmentContext) {
+      if (action === "unequip" && currentContextSlot) {
+        await unequipItem(currentContextSlot);
+        closeContextMenu();
+        return;
+      }
+      if (action === "info" && currentContextItem) {
+        showItemInfo(currentContextItem);
+        closeContextMenu();
+        return;
+      }
+      closeContextMenu();
+      return;
+    }
+
+    if (!currentContextItem) {
+      closeContextMenu();
+      return;
+    }
+
+    switch (action) {
+      case "equip":
+        await equipItem(currentContextItem.id);
+        closeContextMenu();
+        break;
+      case "use":
+        await consumeItem(currentContextItem.id);
+        closeContextMenu();
+        break;
+      case "sell":
+        await sellItem(currentContextItem.id);
+        closeContextMenu();
+        break;
+      case "info":
+        showItemInfo(currentContextItem);
+        closeContextMenu();
+        break;
+      default:
+        closeContextMenu();
+    }
+  });
+});
+
+function showItemInfo(item) {
+  if (!item) {
+    addMessage("Item information not available.", "error");
+    return;
+  }
+
+  const sellValue = item.sellValue || calculateItemSellValue(item);
+  let infoText = `${item.name}\n${item.description}\n\nType: ${item.type}\nRarity: ${item.rarity}\nSell Value: ${sellValue}💰`;
+
+  if (item.stats) {
+    const stats = [];
+    if (item.stats.str) stats.push(`STR: +${item.stats.str}`);
+    if (item.stats.dex) stats.push(`DEX: +${item.stats.dex}`);
+    if (item.stats.wis) stats.push(`WIS: +${item.stats.wis}`);
+    if (item.stats.cha) stats.push(`CHA: +${item.stats.cha}`);
+    if (item.stats.luck) stats.push(`LCK: +${item.stats.luck}`);
+    if (item.stats.damage) stats.push(`DMG: +${item.stats.damage}`);
+    if (item.stats.defense) stats.push(`DEF: +${item.stats.defense}`);
+    if (item.stats.health) stats.push(`HP: +${item.stats.health}`);
+    if (item.stats.stamina) stats.push(`STA: +${item.stats.stamina}`);
+
+    if (stats.length > 0) {
+      infoText += `\n\nStats:\n${stats.join("\n")}`;
+    }
+  }
+
+  if (item.level) {
+    infoText += `\n\nRequires Level: ${item.level}`;
+  }
+
+  // Use a better modal instead of alert
+  const modal = document.createElement("div");
+  modal.className = "item-info-modal";
+  modal.innerHTML = `
+    <div class="item-info-content">
+      <div class="item-info-header">
+        <h3 style="color: ${getRarityColor(item.rarity)}">${item.name}</h3>
+        <button class="item-info-close" onclick="this.closest('.item-info-modal').remove()">×</button>
+      </div>
+      <div class="item-info-body">
+        <p>${item.description}</p>
+        <div class="item-info-details">
+          <div><strong>Type:</strong> ${item.type}</div>
+          <div><strong>Rarity:</strong> ${item.rarity}</div>
+          <div><strong>Sell Value:</strong> ${sellValue}💰</div>
+          ${
+            item.level
+              ? `<div><strong>Requires Level:</strong> ${item.level}</div>`
+              : ""
+          }
+        </div>
+        ${
+          item.stats
+            ? `<div class="item-info-stats">${Object.entries(item.stats)
+                .filter(([k, v]) => v)
+                .map(([k, v]) => `<span>${k.toUpperCase()}: +${v}</span>`)
+                .join(" ")}</div>`
+            : ""
+        }
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Close on click outside
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+}
+
+// Visual feedback for item actions
+function showItemActionFeedback(action, itemName, value = null) {
+  const feedback = document.createElement("div");
+  feedback.className = `item-action-feedback feedback-${action}`;
+
+  let message = "";
+  switch (action) {
+    case "equipped":
+      message = `⚔️ Equipped ${itemName}`;
+      break;
+    case "consumed":
+      message = `💊 Used ${itemName}`;
+      break;
+    case "sold":
+      message = `💰 Sold ${itemName} (+${value}💰)`;
+      break;
+    default:
+      message = itemName;
+  }
+
+  feedback.textContent = message;
+  document.body.appendChild(feedback);
+
+  // Animate
+  setTimeout(() => {
+    feedback.classList.add("show");
+  }, 10);
+
+  // Remove after animation
+  setTimeout(() => {
+    feedback.classList.remove("show");
+    setTimeout(() => {
+      feedback.remove();
+    }, 300);
+  }, 2000);
+}
+
+// Setup Inventory Controls (Filter and Sort)
+function setupInventoryControls() {
+  // Main section controls only (left panel removed)
+  const filterSelectMain = document.getElementById("inventory-filter-main");
+  const sortTypeBtnMain = document.getElementById("sort-type-btn-main");
+
+  if (filterSelectMain) {
+    filterSelectMain.addEventListener("change", () => {
+      if (gameState && gameState.bag) {
+        updateBagGridMain(gameState.bag);
+      }
+    });
+  }
+
+  if (sortTypeBtnMain) {
+    sortTypeBtnMain.addEventListener("click", () => {
+      if (gameState && gameState.bag) {
+        updateBagGridMain(gameState.bag);
+      }
+    });
   }
 }
 

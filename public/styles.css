@@ -1573,3 +1573,225 @@ body {
     margin-bottom: 10px;
   }
 }
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  display: none;
+  background: linear-gradient(
+    135deg,
+    rgba(30, 30, 50, 0.98) 0%,
+    rgba(20, 20, 40, 0.98) 100%
+  );
+  border: 2px solid rgba(139, 92, 246, 0.6);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  z-index: 10000;
+  min-width: 150px;
+  overflow: hidden;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.context-menu-item:hover {
+  background: rgba(139, 92, 246, 0.3);
+  color: #fff;
+}
+
+.context-menu-item:active {
+  background: rgba(139, 92, 246, 0.5);
+  transform: scale(0.98);
+}
+
+.context-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+}
+
+.context-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: rgba(139, 92, 246, 0.3);
+  margin: 4px 0;
+}
+
+/* Item Action Feedback */
+.item-action-feedback {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 12px 24px;
+  background: linear-gradient(
+    135deg,
+    rgba(30, 30, 50, 0.95) 0%,
+    rgba(20, 20, 40, 0.95) 100%
+  );
+  border: 2px solid rgba(139, 92, 246, 0.6);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  z-index: 10001;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.item-action-feedback.show {
+  opacity: 1;
+  transform: translate(-50%, -60%);
+}
+
+.feedback-equipped {
+  border-color: rgba(16, 185, 129, 0.6);
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.2) 0%,
+    rgba(30, 30, 50, 0.95) 100%
+  );
+}
+
+.feedback-consumed {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.2) 0%,
+    rgba(30, 30, 50, 0.95) 100%
+  );
+}
+
+.feedback-sold {
+  border-color: rgba(245, 158, 11, 0.6);
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.2) 0%,
+    rgba(30, 30, 50, 0.95) 100%
+  );
+}
+
+/* Item Info Modal */
+.item-info-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  backdrop-filter: blur(5px);
+}
+
+.item-info-content {
+  background: linear-gradient(
+    135deg,
+    rgba(30, 30, 50, 0.98) 0%,
+    rgba(20, 20, 40, 0.98) 100%
+  );
+  border: 2px solid rgba(139, 92, 246, 0.6);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+}
+
+.item-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.item-info-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.item-info-close {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.item-info-close:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fff;
+}
+
+.item-info-body {
+  color: var(--text-primary);
+}
+
+.item-info-body p {
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.item-info-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+}
+
+.item-info-details div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.item-info-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.item-info-stats span {
+  padding: 4px 8px;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}

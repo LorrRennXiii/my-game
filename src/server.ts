@@ -226,7 +226,8 @@ app.get('/api/game/:userId', async (req, res) => {
       health: game.getHealth(),
       maxHealth: game.getMaxHealth(),
       bag: game.getBag(),
-      equipment: game.getEquipment()
+      equipment: game.getEquipment(),
+      effectiveStats: game.getEffectiveStats()
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get game state' })
@@ -354,7 +355,8 @@ app.post('/api/game/:userId/unequip', async (req, res) => {
       result,
       player: game.getPlayer(),
       bag: game.getBag(),
-      equipment: game.getEquipment()
+      equipment: game.getEquipment(),
+      effectiveStats: game.getEffectiveStats()
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to unequip item' })
@@ -389,6 +391,34 @@ app.post('/api/game/:userId/consume', async (req, res) => {
     })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to consume item' })
+  }
+})
+
+// Sell item
+app.post('/api/game/:userId/sell', async (req, res) => {
+  try {
+    const { userId } = req.params
+    const { itemId, sellValue } = req.body
+    
+    const gameState = await loadGameFromDatabase(userId)
+    if (!gameState) {
+      return res.status(404).json({ error: 'Game not found' })
+    }
+    
+    const { game, playtime } = gameState
+    const result = game.sellItem(itemId, sellValue)
+    
+    // Auto-save after sell
+    await saveGameToDatabase(userId, game, playtime)
+    
+    res.json({
+      result,
+      player: game.getPlayer(),
+      bag: game.getBag(),
+      effectiveStats: game.getEffectiveStats()
+    })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to sell item' })
   }
 })
 
